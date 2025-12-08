@@ -1,6 +1,7 @@
 from pathlib import Path
 from midi_conversion import midi_to_text
 import mido
+import torch
 
 # Constants
 train_path = Path("data/train")
@@ -58,3 +59,37 @@ def process_midis_to_text(midis, composer=None):
 
     return texts
 
+
+class VocabBuilder:
+    def __init__(self, train_seqs, add_unknown_token=True):
+        """
+        Build vocabulary from training sequences only.
+        
+        :param train_seqs: list of strings (training text sequences)
+        :param add_unknown_token: whether to include <UNK>
+        """
+        all_tokens = []
+        for s in train_seqs:
+            all_tokens.extend(s.split())
+
+        self.vocab = sorted(set(all_tokens))
+        
+        if add_unknown_token:
+            self.vocab.extend(["<UNK>"])
+        
+        self.stoi = {t: i for i, t in enumerate(self.vocab)}
+        self.itos = {i: t for t, i in self.stoi.items()}
+        self.vocab_size = len(self.vocab)
+
+        print(f"Vocabulary size (train only): {self.vocab_size}")
+
+        # Store training IDs
+        self.train_ids = torch.tensor([self.stoi[t] for t in all_tokens], dtype=torch.long)
+
+    def encode(self, text: str):
+        """Convert text string → list of token IDs, map unknowns to <UNK>"""
+        return [self.stoi.get(t, self.stoi["<UNK>"]) for t in text.split()]
+
+    def decode(self, ids):
+        """Convert list of token IDs → text string"""
+        return " ".join(self.itos[int(i)] for i in ids)
