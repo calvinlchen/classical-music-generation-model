@@ -1,9 +1,6 @@
 import mido
 
-# =========================
-# Constants & Note Names
-# =========================
-
+# Constants
 TARGET_TPB = 480          # standardized ticks per beat
 GRID_RESOLUTION = 48      # grid slots per beat (480 / 48 = 10 ticks per grid)
 MAX_DURATION_BEATS = 8    # cap duration at this many beats
