@@ -1,5 +1,39 @@
 import mido
 
+
+TARGET_TPB = 480         # standardized ticks per beat
+GRID_RESOLUTION = 48     # grid slots per beat
+MAX_DURATION_BEATS = 8   # cap very long notes at this many beats
+
+
+def normalize_midi(mid):
+    """
+    Return a copy of `mid` whose ticks_per_beat is TARGET_TPB.
+    """
+    if mid.ticks_per_beat == TARGET_TPB:
+        return mid
+
+    scale = TARGET_TPB / mid.ticks_per_beat
+    new_mid = mido.MidiFile(ticks_per_beat=TARGET_TPB)
+
+    for track in mid.tracks:
+        new_track = mido.MidiTrack()
+        abs_scaled = 0
+        last_scaled = 0
+        for msg in track:
+            abs_scaled += msg.time * scale
+            new_msg = msg.copy()
+            if hasattr(new_msg, "time"):
+                # convert back to delta time
+                scaled_int = int(round(abs_scaled))
+                new_msg.time = scaled_int - last_scaled
+                last_scaled = scaled_int
+            new_track.append(new_msg)
+        new_mid.tracks.append(new_track)
+
+    return new_mid
+    
+
 # Given a MIDI file through mido, return a list of its messages in chronological order
 # Return format: [(abs_time, track_index, msg), ...]
 def get_chronological_messages(mido_file):
@@ -16,6 +50,7 @@ def get_chronological_messages(mido_file):
 
     return events
 
+    
 def midi_to_text(mido_file, composer=None):
     mid = mido_file
     ticks_per_beat = mid.ticks_per_beat
