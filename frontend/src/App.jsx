@@ -1,65 +1,242 @@
-// frontend/src/App.jsx
-import { useState } from "react";
+// APP FRONTEND CODE created using CHATGPT
+
+import { useState, useEffect } from "react";
 import * as Tone from "tone";
 import { Midi } from "@tonejs/midi";
 
 const BACKEND_URL = "http://localhost:8000";
 
-async function playMidiFromArrayBuffer(arrayBuffer) {
-  const midi = new Midi(arrayBuffer);
+// Hard-coded starting prompts
+const PROMPTS = [
+  {
+    id: "default",
+    name: "Default – Mozart, C major, 4/4, 120 BPM",
+    text: "<SOS> COMPOSER_mozart KEY_C TIME_SIGNATURE_4/4 TEMPO_BPM_120 MEASURE BEAT",
+  },
+  {
+    id: "blank",
+    name: "blank",
+    text:"<SOS>"
+  },
+  {
+    id: "haydn_n10",
+    name: "Haydn – Piano Piece No. 10",
+    text:
+      "<SOS> COMPOSER_haydn KEY_G TIME_SIGNATURE_6/8 TEMPO_BPM_120 MEASURE BEAT BEAT BEAT POS_24 NOTE_74 DUR_22 VEL_4 BEAT POS_0 NOTE_55 DUR_20 VEL_3 NOTE_59 DUR_20 VEL_3 NOTE_74 DUR_36 VEL_5 POS_36 NOTE_73 DUR_12 VEL_4 BEAT POS_0 NOTE_55 DUR_10 VEL_3 NOTE_59 DUR_10 VEL_3 NOTE_74 DUR_22 VEL_4 POS_24 NOTE_55 DUR_20 VEL_3 NOTE_59 DUR_20 VEL_3 NOTE_74 DUR_36 VEL_5 BEAT POS_12 NOTE_73 DUR_12 VEL_4 POS_24 NOTE_55 DUR_10 VEL_3 NOTE_59 DUR_10 VEL_3 NOTE_74 DUR_22 VEL_4 MEASURE BEAT POS_0 NOTE_48 DUR_20 VEL_3 NOTE_60 DUR_20 VEL_3 NOTE_76 DUR_36 VEL_5 POS_36 NOTE_75 DUR_12 VEL_4 BEAT POS_0 NOTE_48 DUR_10 VEL_3 NOTE_60 DUR_10 VEL_3 NOTE_76 DUR_22 VEL_4 POS_24 NOTE_50 DUR_20 VEL_3 NOTE_54 DUR_20 VEL_3 NOTE_69 DUR_48 VEL_5 BEAT POS_24 NOTE_50 DUR_10 VEL_3 NOTE_54 DUR_10 VEL_3 NOTE_72 DUR_22 VEL_4 BEAT POS_0 NOTE_55 DUR_20 VEL_3 NOTE_72 DUR_3 VEL_4 POS_3 NOTE_71 DUR_3 VEL_4 POS_6 NOTE_69 DUR_3 VEL_4 POS_9 NOTE_71 DUR_24 VEL_4 POS_36 NOTE_72 DUR_12 VEL_4 BEAT POS_0 NOTE_55 DUR_10 VEL_3 NOTE_74 DUR_22 VEL_4 POS_24 NOTE_48 DUR_20 VEL_3 NOTE_60 DUR_20 VEL_3 NOTE_64 DUR_44 VEL_4 NOTE_71 DUR_3 VEL_4 POS_27 NOTE_69 DUR_3 VEL_4 POS_30 NOTE_68 DUR_3 VEL_4 POS_33 NOTE_69 DUR_24 VEL_4 BEAT POS_12 NOTE_71 DUR_12 VEL_4 POS_24 NOTE_48 DUR_10 VEL_3 NOTE_60 DUR_10 VEL_3 NOTE_64 DUR_22 VEL_4 NOTE_72 DUR_22 VEL_4 MEASURE BEAT",
+  },
+  {
+    id: "mozart_sym28",
+    name: "Mozart – Symphony No. 28, Mvt. 4",
+    text:
+      "<SOS> COMPOSER_mozart KEY_C TIME_SIGNATURE_4/4 TEMPO_BPM_250 MEASURE BEAT POS_0 NOTE_60 DUR_20 VEL_2 NOTE_79 DUR_8 VEL_2 POS_8 NOTE_81 DUR_8 VEL_2 POS_16 NOTE_79 DUR_8 VEL_2 POS_24 NOTE_62 DUR_20 VEL_2 NOTE_77 DUR_12 VEL_2 POS_36 NOTE_79 DUR_12 VEL_2 BEAT POS_0 NOTE_64 DUR_20 VEL_2 POS_24 NOTE_60 DUR_20 VEL_2 BEAT POS_0 NOTE_62 DUR_20 VEL_2 NOTE_77 DUR_8 VEL_2 POS_8 NOTE_79 DUR_8 VEL_2 POS_16 NOTE_77 DUR_8 VEL_2 POS_24 NOTE_64 DUR_20 VEL_2 NOTE_76 DUR_12 VEL_2 POS_36 NOTE_77 DUR_12 VEL_2 BEAT POS_0 NOTE_65 DUR_20 VEL_2 POS_24 NOTE_62 DUR_20 VEL_2 MEASURE BEAT POS_0 NOTE_64 DUR_20 VEL_2 NOTE_76 DUR_8 VEL_2 POS_8 NOTE_77 DUR_8 VEL_2 POS_16 NOTE_76 DUR_8 VEL_2 POS_24 NOTE_65 DUR_20 VEL_2 NOTE_74 DUR_12 VEL_2 POS_36 NOTE_76 DUR_12 VEL_2 BEAT POS_0 NOTE_67 DUR_20 VEL_2 POS_24 NOTE_64 DUR_20 VEL_2 BEAT POS_0 NOTE_65 DUR_20 VEL_2 NOTE_74 DUR_8 VEL_2 POS_8 NOTE_76 DUR_8 VEL_2 POS_16 NOTE_74 DUR_8 VEL_2 POS_24 NOTE_67 DUR_20 VEL_2 NOTE_72 DUR_12 VEL_2 POS_36 NOTE_74 DUR_12 VEL_2 BEAT POS_0 NOTE_69 DUR_20 VEL_2 POS_24 NOTE_65 DUR_20 VEL_2 MEASURE BEAT POS_0 NOTE_64 DUR_20 VEL_2 NOTE_72 DUR_8 VEL_2 POS_8 NOTE_74 DUR_8 VEL_2 POS_16 NOTE_72 DUR_8 VEL_2 POS_24 NOTE_65 DUR_20 VEL_2 NOTE_71 DUR_12 VEL_2 POS_36 NOTE_72 DUR_12 VEL_2 BEAT POS_0 NOTE_67 DUR_20 VEL_2 POS_24 NOTE_64 DUR_20 VEL_2 BEAT POS_0 NOTE_62 DUR_20 VEL_2 NOTE_71 DUR_8 VEL_2 POS_8 NOTE_72 DUR_8 VEL_2 POS_16 NOTE_71 DUR_8 VEL_2 POS_24 NOTE_64 DUR_20 VEL_2 NOTE_69 DUR_12 VEL_2 POS_36 NOTE_71 DUR_12 VEL_2 BEAT POS_0 NOTE_65 DUR_20 VEL_2 POS_24 NOTE_62 DUR_20 VEL_2 MEASURE BEAT",
+  },
+];
 
-  // master volume a bit lower
-  const volume = new Tone.Volume(-6).toDestination();
+// ----------------- shared helpers -----------------
 
-  const now = Tone.now() + 0.5;
-
-  // one polysynth per track (simple but works)
-  midi.tracks.forEach((track) => {
-    if (track.notes.length === 0) return;
-    const synth = new Tone.PolySynth(Tone.Synth).connect(volume);
-
-    track.notes.forEach((note) => {
-      synth.triggerAttackRelease(
-        note.name,
-        note.duration,
-        now + note.time,
-        note.velocity
-      );
-    });
-  });
+function base64ToUint8Array(b64) {
+  const binary = atob(b64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
-function App() {
+let currentSynth = null;
+
+function stopToneTransportAndSynth() {
+  Tone.Transport.stop();
+  Tone.Transport.cancel();
+  if (currentSynth) {
+    currentSynth.dispose();
+    currentSynth = null;
+  }
+}
+
+/**
+ * Play a Tone.js Midi object starting at a given position in seconds.
+ * Rebuilds the schedule each time (so seeking backwards works).
+ */
+async function playMidiFromPosition(midi, startSec = 0) {
+  await Tone.start();
+
+  // Reset everything
+  stopToneTransportAndSynth();
+
+  const volume = new Tone.Volume(-6).toDestination();
+  currentSynth = new Tone.PolySynth(Tone.Synth).connect(volume);
+
+  midi.tracks.forEach((track) => {
+    track.notes.forEach((note) => {
+      const noteStart = note.time;
+      const noteEnd = note.time + note.duration;
+
+      // Skip notes that have already finished before startSec
+      if (noteEnd <= startSec) return;
+
+      const scheduledTime = Math.max(0, noteStart - startSec);
+
+      Tone.Transport.schedule((time) => {
+        currentSynth.triggerAttackRelease(
+          note.name,
+          note.duration,
+          time,
+          note.velocity
+        );
+      }, scheduledTime);
+    });
+  });
+
+  Tone.Transport.seconds = 0;
+  Tone.Transport.start("+0.05");
+}
+
+// ----------------- playback hook -----------------
+
+function useMidiPlayer(midiObj) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0); // 0–1
+  const [duration, setDuration] = useState(0); // seconds
+  const [offset, setOffset] = useState(0);     // where playback starts in seconds
+
+  // When a new MIDI object arrives, reset state
+  useEffect(() => {
+    if (midiObj) {
+      const dur = midiObj.duration || 0;
+      setDuration(dur);
+      setProgress(0);
+      setOffset(0);
+      setIsPlaying(false);
+    } else {
+      setDuration(0);
+      setProgress(0);
+      setOffset(0);
+      setIsPlaying(false);
+    }
+  }, [midiObj]);
+
+  // Progress loop
+  useEffect(() => {
+    let rafId;
+    const update = () => {
+      if (!isPlaying || duration <= 0) return;
+
+      const t = offset + Tone.Transport.seconds;
+      const frac = Math.min(t / duration, 1);
+      setProgress(frac);
+
+      if (t >= duration) {
+        stopToneTransportAndSynth();
+        setIsPlaying(false);
+        setProgress(1);
+        return;
+      }
+      rafId = requestAnimationFrame(update);
+    };
+
+    if (isPlaying && duration > 0) {
+      rafId = requestAnimationFrame(update);
+    }
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [isPlaying, duration, offset]);
+
+  // Start/resume playback from the current offset
+  const play = async (overrideMidiObj) => {
+    const midiToPlay = overrideMidiObj || midiObj;
+    if (!midiToPlay) return;
+    await playMidiFromPosition(midiToPlay, offset);
+    setIsPlaying(true);
+  };
+
+  const stop = () => {
+    stopToneTransportAndSynth();
+    setIsPlaying(false);
+    // keep offset & progress where they are so you can resume
+  };
+
+  // Seek to a new fraction of the piece (0–1)
+  const seek = async (fraction) => {
+    if (!midiObj || duration <= 0) {
+      setProgress(fraction);
+      return;
+    }
+
+    const clamped = Math.min(Math.max(fraction, 0), 1);
+    const newPosSec = clamped * duration;
+
+    setOffset(newPosSec);
+    setProgress(clamped);
+
+    // If currently playing, re-start from the new position
+    if (isPlaying) {
+      await playMidiFromPosition(midiObj, newPosSec);
+      setIsPlaying(true);
+    }
+  };
+
+  return {
+    isPlaying,
+    progress,
+    duration,
+    play,
+    stop,
+    seek,
+  };
+}
+
+// ----------------- Diffusion page -----------------
+
+function DiffusionPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [downloadUrl, setDownloadUrl] = useState(null);
+  const [imageUrl, setImageUrl] = useState(null);
+  const [midiObj, setMidiObj] = useState(null);
 
-  const handleGenerateAndPlay = async () => {
+  const { isPlaying, progress, duration, play, stop, seek } = useMidiPlayer(midiObj);
+
+  // cleanup download URL & audio when unmount
+  useEffect(() => {
+    return () => {
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      stopToneTransportAndSynth();
+    };
+  }, [downloadUrl]);
+
+  const handleGenerate = async () => {
     try {
       setIsLoading(true);
-      setStatus("Starting audio engine…");
-      await Tone.start(); // required by browsers
+      setStatus("Requesting diffusion sample from backend…");
 
-      setStatus("Requesting MIDI from backend…");
       const res = await fetch(`${BACKEND_URL}/generate-midi-from-diffusion`, {
         method: "POST",
       });
-      if (!res.ok) {
-        throw new Error(`Backend error: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`Backend error: ${res.status}`);
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      if (downloadUrl) {
-        URL.revokeObjectURL(downloadUrl);
-      }
+      const data = await res.json();
+
+      // MIDI
+      const midiBytes = base64ToUint8Array(data.midi_base64);
+      const midiBlob = new Blob([midiBytes], { type: "audio/midi" });
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      const url = URL.createObjectURL(midiBlob);
       setDownloadUrl(url);
 
-      setStatus("Playing MIDI…");
-      const arrayBuffer = await blob.arrayBuffer();
-      await playMidiFromArrayBuffer(arrayBuffer);
+      const arrayBuf = await midiBlob.arrayBuffer();
+      const midi = new Midi(arrayBuf);
+      setMidiObj(midi);
 
-      setStatus("Done! You can download the file below.");
+      // Image
+      setImageUrl(`data:image/png;base64,${data.image_base64}`);
+
+      setStatus("Generated via diffusion. Ready to play.");
+      // optional: auto-play and keep hook in sync
+      // await play(midi);
     } catch (err) {
       console.error(err);
       setStatus(`Error: ${err.message}`);
@@ -67,6 +244,590 @@ function App() {
       setIsLoading(false);
     }
   };
+
+  return (
+    <>
+      <h1
+        style={{
+          fontSize: "1.75rem",
+          fontWeight: 700,
+          marginBottom: "0.5rem",
+        }}
+      >
+        Diffusion piano-roll generator
+      </h1>
+      <p style={{ marginBottom: "1.5rem", color: "#9ca3af" }}>
+        Sample a piano-roll image from the diffusion model, convert it to MIDI,
+        and listen.
+      </p>
+
+      <button
+        onClick={handleGenerate}
+        disabled={isLoading}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.5rem",
+          padding: "0.75rem 1.5rem",
+          borderRadius: "999px",
+          border: "none",
+          cursor: isLoading ? "default" : "pointer",
+          background: isLoading
+            ? "rgba(79,70,229,0.6)"
+            : "linear-gradient(135deg,#6366f1,#a855f7)",
+          color: "white",
+          fontSize: "1rem",
+          fontWeight: 600,
+          boxShadow:
+            "0 10px 25px -12px rgba(88,80,236,0.8),0 0 0 1px rgba(129,140,248,0.4)",
+          transition: "transform 0.08s ease, box-shadow 0.08s ease",
+        }}
+      >
+        {isLoading ? "Generating…" : "Generate (diffusion)"}
+      </button>
+
+      <div style={{ marginTop: "1rem", minHeight: "1.5rem" }}>
+        {status && (
+          <span style={{ fontSize: "0.9rem", color: "#a5b4fc" }}>{status}</span>
+        )}
+      </div>
+
+      {midiObj && (
+        <div
+          style={{
+            marginTop: "1.75rem",
+            padding: "1rem 1.25rem",
+            borderRadius: "0.75rem",
+            background: "rgba(15,23,42,0.9)",
+            border: "1px solid rgba(148,163,184,0.35)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "1rem",
+              marginBottom: "0.75rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ fontSize: "0.9rem", color: "#cbd5f5" }}>
+              Progress: <strong>{Math.round(progress * 100)}%</strong>
+            </div>
+            <div style={{ fontSize: "0.9rem", color: "#94a3b8" }}>
+              Length: {duration.toFixed(2)} s
+            </div>
+          </div>
+
+          {/* progress bar – follows playback */}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(progress * 100)}
+            onChange={(e) => {
+              const frac = Number(e.target.value) / 100;
+              seek(frac);
+            }}
+            style={{ width: "100%" }}
+          />
+
+          <div
+            style={{
+              marginTop: "0.9rem",
+              display: "flex",
+              gap: "0.75rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              onClick={() => play()}
+              style={{
+                padding: "0.5rem 1.2rem",
+                borderRadius: "999px",
+                border: "none",
+                cursor: "pointer",
+                background: "rgba(52,211,153,0.16)",
+                color: "#6ee7b7",
+                fontWeight: 600,
+              }}
+            >
+              ▶ Play
+            </button>
+            <button
+              onClick={stop}
+              disabled={!isPlaying}
+              style={{
+                padding: "0.5rem 1.2rem",
+                borderRadius: "999px",
+                border: "none",
+                cursor: isPlaying ? "pointer" : "default",
+                background: "rgba(248,113,113,0.16)",
+                color: "#fca5a5",
+                fontWeight: 600,
+              }}
+            >
+              ⏹ Stop
+            </button>
+          </div>
+        </div>
+      )}
+
+      {downloadUrl && (
+        <div style={{ marginTop: "1.5rem" }}>
+          <a
+            href={downloadUrl}
+            download="generated_diffusion.mid"
+            style={{
+              color: "#22c55e",
+              textDecoration: "none",
+              fontWeight: 600,
+            }}
+          >
+            ⬇️ Download diffusion-based MIDI
+          </a>
+        </div>
+      )}
+
+      {imageUrl && (
+        <div style={{ marginTop: "2rem" }}>
+          <h2
+            style={{
+              fontSize: "1.1rem",
+              fontWeight: 600,
+              marginBottom: "0.75rem",
+            }}
+          >
+            Generated piano-roll (inverted y-axis)
+          </h2>
+          <div
+            style={{
+              borderRadius: "0.75rem",
+              overflow: "hidden",
+              border: "1px solid rgba(148,163,184,0.35)",
+              background: "black",
+            }}
+          >
+            <img
+              src={imageUrl}
+              alt="Generated piano-roll"
+              style={{
+                display: "block",
+                width: "100%",
+                height: "auto",
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ----------------- Transformer page (Merged with Smart AI) -----------------
+
+function TransformerPage() {
+  // --- 1. NEW STATE VARIABLES (Make sure these are here!) ---
+  // We initialize the prompt using the first template in your PROMPTS list
+  const [prompt, setPrompt] = useState(PROMPTS[0].text);
+  const [selectedId, setSelectedId] = useState(PROMPTS[0].id);
+
+  const [maxTokens, setMaxTokens] = useState(500);
+  const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState("");
+  const [downloadUrl, setDownloadUrl] = useState(null);
+  const [midiObj, setMidiObj] = useState(null);
+
+  // --- AI Assistant State ---
+  const [aiDescription, setAiDescription] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDraft, setAiDraft] = useState(null);
+
+  const { isPlaying, progress, duration, play, stop, seek } = useMidiPlayer(midiObj);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      stopToneTransportAndSynth();
+    };
+  }, [downloadUrl]);
+
+  // --- 2. NEW HANDLER FUNCTION (Make sure this is here!) ---
+  const handleTemplateChange = (e) => {
+    const newId = e.target.value;
+    setSelectedId(newId);
+    
+    // Find the text associated with this ID and update the main prompt
+    const template = PROMPTS.find(p => p.id === newId);
+    if (template) {
+      setPrompt(template.text);
+    }
+  };
+
+  const handleDraftTokens = async () => {
+    if (!aiDescription.trim()) return;
+    setAiLoading(true);
+    setAiDraft(null); 
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/generate-seed-text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_prompt: aiDescription }),
+      });
+
+      if (!res.ok) throw new Error(`Backend error: ${res.status}`);
+      const data = await res.json();
+      setAiDraft(data.seed_text); 
+    } catch (err) {
+      console.error(err);
+      setStatus(`AI Error: ${err.message}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    try {
+      setIsLoading(true);
+      setStatus("Generating music from tokens...");
+
+      const res = await fetch(`${BACKEND_URL}/generate-midi-from-transformer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_text: prompt,
+          max_new_tokens: Number(maxTokens) || 500,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`Backend error: ${res.status}`);
+      const data = await res.json();
+
+      const midiBytes = base64ToUint8Array(data.midi_base64);
+      const midiBlob = new Blob([midiBytes], { type: "audio/midi" });
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      const url = URL.createObjectURL(midiBlob);
+      setDownloadUrl(url);
+
+      const arrayBuf = await midiBlob.arrayBuffer();
+      const midi = new Midi(arrayBuf);
+      setMidiObj(midi);
+
+      setStatus("Generation complete.");
+    } catch (err) {
+      console.error(err);
+      setStatus(`Error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <h1 style={{ fontSize: "1.75rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+        Transformer MIDI Generator
+      </h1>
+      <p style={{ marginBottom: "1.5rem", color: "#9ca3af" }}>
+        Generate MIDI tokens with the text transformer. Use the AI assistant, or pick a starting template below.
+      </p>
+
+      {/* --- AI ASSISTANT SECTION --- */}
+      <div style={{
+        background: "rgba(99, 102, 241, 0.1)",
+        border: "1px dashed rgba(99, 102, 241, 0.4)",
+        borderRadius: "0.75rem",
+        padding: "1rem",
+        marginBottom: "2rem"
+      }}>
+        <h3 style={{ fontSize: "1rem", fontWeight: 600, color: "#818cf8", marginTop: 0 }}>
+          AI Prompt Assistant
+        </h3>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <input
+            type="text"
+            placeholder="Describe the basics (e.g. 'Fast piece in A major')..."
+            value={aiDescription}
+            onChange={(e) => setAiDescription(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleDraftTokens()}
+            style={{
+              flex: 1,
+              minWidth: "200px",
+              padding: "0.5rem",
+              borderRadius: "0.5rem",
+              border: "1px solid rgba(148,163,184,0.4)",
+              background: "#020617",
+              color: "#e5e7eb",
+            }}
+          />
+          <button
+            onClick={handleDraftTokens}
+            disabled={aiLoading || !aiDescription}
+            style={{
+              padding: "0.5rem 1rem",
+              borderRadius: "0.5rem",
+              border: "none",
+              cursor: aiLoading ? "wait" : "pointer",
+              background: "#4f46e5",
+              color: "white",
+              fontWeight: 600,
+            }}
+          >
+            {aiLoading ? "Drafting..." : "Draft Tokens"}
+          </button>
+        </div>
+
+        {aiDraft && (
+          <div style={{ marginTop: "1rem", background: "rgba(0,0,0,0.3)", padding: "0.75rem", borderRadius: "0.5rem" }}>
+            <div style={{ fontSize: "0.8rem", color: "#cbd5e1", marginBottom: "0.5rem" }}>
+              ChatGPT suggested:
+            </div>
+            <div style={{ fontFamily: "monospace", fontSize: "0.85rem", color: "#a5b4fc", marginBottom: "0.75rem", wordBreak: "break-all" }}>
+              {aiDraft}
+            </div>
+            <button
+              onClick={() => {
+                setPrompt(aiDraft);
+                // We use 'blank' here because that's the ID in your PROMPTS array
+                setSelectedId("blank"); 
+              }}
+              style={{
+                fontSize: "0.8rem",
+                padding: "0.3rem 0.8rem",
+                background: "#4338ca",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer"
+              }}
+            >
+              ⬇️ Paste into Main Input
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* --- 3. TEMPLATE DROPDOWN --- */}
+      <div style={{ marginBottom: "0.5rem" }}>
+        <label style={{ fontSize: "0.9rem", color: "#cbd5e1" }}>
+          Starting template:&nbsp;
+          <select 
+            value={selectedId} 
+            onChange={handleTemplateChange}
+            style={{
+              marginLeft: "0.5rem",
+              padding: "0.3rem",
+              borderRadius: "0.3rem",
+              background: "#1e293b",
+              color: "#e5e7eb",
+              border: "1px solid #475569"
+            }}
+          >
+            {PROMPTS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {/* --- MAIN INPUT AREA --- */}
+      <label style={{ fontSize: "0.9rem", color: "#cbd5e1" }}>
+        <strong>Main Token Input</strong> (The model will continue from here):
+        <textarea
+          value={prompt}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            // Switch dropdown to 'blank' if user types manually
+            if (selectedId !== 'blank') setSelectedId('blank');
+          }}
+          rows={4}
+          style={{
+            marginTop: "0.4rem",
+            width: "100%",
+            resize: "vertical",
+            borderRadius: "0.5rem",
+            border: "1px solid rgba(148,163,184,0.4)",
+            background: "#020617",
+            color: "#e5e7eb",
+            padding: "0.5rem 0.75rem",
+            fontFamily: "monospace",
+            lineHeight: "1.4"
+          }}
+        />
+      </label>
+
+       <div style={{ marginTop: "0.75rem", marginBottom: "1.25rem" }}>
+        <label style={{ fontSize: "0.9rem", color: "#cbd5e1" }}>
+          Max new tokens:&nbsp;
+          <input
+            type="number"
+            min={10}
+            max={2048}
+            value={maxTokens}
+            onChange={(e) => setMaxTokens(e.target.value)}
+            style={{
+              width: "90px",
+              borderRadius: "0.5rem",
+              border: "1px solid rgba(148,163,184,0.4)",
+              background: "#020617",
+              color: "#e5e7eb",
+              padding: "0.25rem 0.5rem",
+            }}
+          />
+        </label>
+      </div>
+
+      <button
+        onClick={handleGenerate}
+        disabled={isLoading}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.5rem",
+          padding: "0.75rem 1.5rem",
+          borderRadius: "999px",
+          border: "none",
+          cursor: isLoading ? "default" : "pointer",
+          background: isLoading
+            ? "rgba(79,70,229,0.6)"
+            : "linear-gradient(135deg,#6366f1,#a855f7)",
+          color: "white",
+          fontSize: "1rem",
+          fontWeight: 600,
+          boxShadow:
+            "0 10px 25px -12px rgba(88,80,236,0.8),0 0 0 1px rgba(129,140,248,0.4)",
+        }}
+      >
+        {isLoading ? "Generating..." : "Generate MIDI"}
+      </button>
+
+      <div style={{ marginTop: "1rem", minHeight: "1.5rem" }}>
+        {status && (
+          <span style={{ fontSize: "0.9rem", color: "#a5b4fc" }}>{status}</span>
+        )}
+      </div>
+
+      {midiObj && (
+        <div
+          style={{
+            marginTop: "1.75rem",
+            padding: "1rem 1.25rem",
+            borderRadius: "0.75rem",
+            background: "rgba(15,23,42,0.9)",
+            border: "1px solid rgba(148,163,184,0.35)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "1rem",
+              marginBottom: "0.75rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ fontSize: "0.9rem", color: "#cbd5f5" }}>
+              Progress: <strong>{Math.round(progress * 100)}%</strong>
+            </div>
+            <div style={{ fontSize: "0.9rem", color: "#94a3b8" }}>
+              Length: {duration.toFixed(2)} s
+            </div>
+          </div>
+
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(progress * 100)}
+            onChange={(e) => {
+              const frac = Number(e.target.value) / 100;
+              seek(frac);
+            }}
+            style={{ width: "100%", cursor: "pointer" }}
+          />
+
+          <div
+            style={{
+              marginTop: "0.9rem",
+              display: "flex",
+              gap: "0.75rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              onClick={() => play()}
+              style={{
+                padding: "0.5rem 1.2rem",
+                borderRadius: "999px",
+                border: "none",
+                cursor: "pointer",
+                background: "rgba(52,211,153,0.16)",
+                color: "#6ee7b7",
+                fontWeight: 600,
+              }}
+            >
+              ▶ Play
+            </button>
+            <button
+              onClick={stop}
+              disabled={!isPlaying}
+              style={{
+                padding: "0.5rem 1.2rem",
+                borderRadius: "999px",
+                border: "none",
+                cursor: isPlaying ? "pointer" : "default",
+                background: "rgba(248,113,113,0.16)",
+                color: "#fca5a5",
+                fontWeight: 600,
+              }}
+            >
+              ⏹ Stop
+            </button>
+          </div>
+        </div>
+      )}
+
+      {downloadUrl && (
+        <div style={{ marginTop: "1.5rem" }}>
+          <a
+            href={downloadUrl}
+            download="transformer_generated.mid"
+            style={{
+              color: "#22c55e",
+              textDecoration: "none",
+              fontWeight: 600,
+            }}
+          >
+            ⬇️ Download MIDI
+          </a>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ----------------- Root app with three "pages" -----------------
+
+function App() {
+  // Options: "transformer" | "diffusion"
+  const [tab, setTab] = useState("transformer"); 
+
+  const getButtonStyle = (active) => ({
+    padding: "0.4rem 0.9rem",
+    borderRadius: "999px",
+    border: "none",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+    fontWeight: 600,
+    background: active ? "#1d4ed8" : "rgba(15,23,42,0.9)",
+    color: active ? "#e5e7eb" : "#9ca3af",
+    transition: "all 0.2s ease"
+  });
 
   return (
     <div
@@ -85,75 +846,39 @@ function App() {
           background: "#020617",
           borderRadius: "1.25rem",
           padding: "2.5rem 2.75rem",
-          maxWidth: "640px",
+          maxWidth: "960px",
           width: "100%",
           boxShadow: "0 25px 50px -12px rgba(0,0,0,0.65)",
           border: "1px solid rgba(148,163,184,0.25)",
         }}
       >
-        <h1
+        {/* Tabs */}
+        <div
           style={{
-            fontSize: "1.75rem",
-            fontWeight: 700,
-            marginBottom: "0.5rem",
+            display: "flex",
+            gap: "0.75rem",
+            marginBottom: "1.75rem",
+            flexWrap: "wrap"
           }}
         >
-          "Music" Generator
-        </h1>
-        <p style={{ marginBottom: "1.5rem", color: "#9ca3af" }}>
-          The button below generates a MIDI file from on a diffusion-based
-          model. You can also download the generated <code>.mid</code> file.
-        </p>
-
-        <button
-          onClick={handleGenerateAndPlay}
-          disabled={isLoading}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "0.5rem",
-            padding: "0.75rem 1.5rem",
-            borderRadius: "999px",
-            border: "none",
-            cursor: isLoading ? "default" : "pointer",
-            background: isLoading
-              ? "rgba(79,70,229,0.6)"
-              : "linear-gradient(135deg,#6366f1,#a855f7)",
-            color: "white",
-            fontSize: "1rem",
-            fontWeight: 600,
-            boxShadow:
-              "0 10px 25px -12px rgba(88,80,236,0.8),0 0 0 1px rgba(129,140,248,0.4)",
-            transition: "transform 0.08s ease, box-shadow 0.08s ease",
-          }}
-        >
-          {isLoading ? "Generating…" : "Generate & Play MIDI"}
-        </button>
-
-        <div style={{ marginTop: "1rem", minHeight: "1.5rem" }}>
-          {status && (
-            <span style={{ fontSize: "0.9rem", color: "#a5b4fc" }}>
-              {status}
-            </span>
-          )}
+          <button
+            onClick={() => setTab("transformer")}
+            style={getButtonStyle(tab === "transformer")}
+          >
+            Transformer
+          </button>
+          <button
+            onClick={() => setTab("diffusion")}
+            style={getButtonStyle(tab === "diffusion")}
+          >
+            Diffusion
+          </button>
         </div>
 
-        {downloadUrl && (
-          <div style={{ marginTop: "1.5rem" }}>
-            <a
-              href={downloadUrl}
-              download="generated.mid"
-              style={{
-                color: "#22c55e",
-                textDecoration: "none",
-                fontWeight: 600,
-              }}
-            >
-              ⬇️ Download generated.mid
-            </a>
-          </div>
-        )}
+        {/* Page Routing */}
+        {tab === "diffusion" && <DiffusionPage />}
+        {tab === "transformer" && <TransformerPage />}
+        
       </div>
     </div>
   );
