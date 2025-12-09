@@ -172,7 +172,7 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
                           lr=1e-4, gen_freq=50, weight_decay=1e-4,
                           img_size=[88, 1024], device="cpu",
                           save_dir="models/diffusion_checkpoints",
-                          save_every=20, save_checkpoints=True):
+                          save_checkpoints=True):
     """
     Train the diffusion model to predict noise.
 
@@ -260,9 +260,9 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
         plt.show()
         print()
 
-        if save_checkpoints and (epoch % save_every == 0):
-            ckpt_path = os.path.join(save_dir,
-                                     f"diffusion_epoch_{epoch:04d}.pt")
+        if save_checkpoints:
+            ckpt_path = os.path.join(
+                save_dir, f"diffusion_epoch_{gen_freq*(epoch_group+1):04d}.pt")
             torch.save(
                 {
                     "epoch": epoch,
