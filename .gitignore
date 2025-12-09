@@ -1,6 +1,7 @@
 .idea/
 .ipynb_checkpoints/
 .venv/
+venv
 .virtual_documents/
 __pycache__/
 midi-classical-music/
