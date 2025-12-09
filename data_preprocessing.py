@@ -14,10 +14,22 @@ SEQ_EOS = "<EOS>"
 
 def get_midis_by_composer(composer):
     """
-    Get all midis for a particular composer within default /data filepath.
+    Get all MIDIs for one or more composers within default /data filepath.
 
-    :param composer: lowercase composer name at the start of each file
+    Returns [[train midis], [val midis], [test midis]], where within each
+    train/val/test midi list at each index is (midi, composer)
+
+    :param composer: either a single lowercase composer string 
+                     or a list of lowercase composer strings
     """
+    # Normalize to list
+    if isinstance(composer, str):
+        composers = [composer]
+    elif isinstance(composer, (list, tuple, set)):
+        composers = [c.lower() for c in composer]
+    else:
+        raise ValueError("composer must be a string or list/tuple/set of strings")
+    
     paths = [train_path, val_path, test_path]
     # Index 0 contains train midis, 1 contains val midis, 2 contains test midis.
     train_val_test_midis = [[], [], []]
@@ -26,30 +38,30 @@ def get_midis_by_composer(composer):
     for i, path in enumerate(paths):
         print(f"Now loading MIDIs from {path}.")
         for midi_file in path.glob("*.mid"):
-            if composer in midi_file.name.lower():
-                try:
-                    midi_obj = mido.MidiFile(midi_file)
-                    train_val_test_midis[i].append(midi_obj)
-                except Exception as e:
-                    print(f"Could not load {midi_file}: {e}")    
+            filename = midi_file.name.lower()
+            for c in composers:
+                if c in filename:
+                    try:
+                        midi_obj = mido.MidiFile(midi_file)
+                        train_val_test_midis[i].append((midi_obj, c))
+                    except Exception as e:
+                        print(f"Could not load {midi_file}: {e}")    
         total_midis += len(train_val_test_midis[i])        
         print(f"Loaded {len(train_val_test_midis[i])} MIDI files from {path}")
 
     print(f"{total_midis} MIDI files retrieved.")
     return train_val_test_midis
 
-
-def process_midis_to_text(midis, composer=None):
+def process_midis_to_text(midis):
     """
     Process a series of MIDI files into text by calling the
     midi_to_text method from midi_conversion.py
     
-    :param midis: List of mido MIDI objects to convert
-    :param composer: Composer name
+    :param midis: List of midis in (mido object, composer) format to convert
     """
     texts = []
 
-    for i, midi in enumerate(midis):
+    for i, (midi, composer) in enumerate(midis):
         texts.append(midi_to_text(midi, composer))
         print(f"Processed {i}/{len(midis)} files", end="\r")
 

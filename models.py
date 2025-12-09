@@ -7,7 +7,8 @@ from model_helpers import get_batch, estimate_loss
 
 class MidiTextTransformer(nn.Module):
     def __init__(self, vocab_size, d_model=256,
-                 n_head=4, n_layer=6, dim_ff=512, block_size=512):
+                 n_head=4, n_layer=6, dim_ff=512, block_size=512,
+                 dropout=0.1):
         super().__init__()
         self.block_size = block_size
         self.tok_emb = nn.Embedding(vocab_size, d_model)
@@ -17,6 +18,7 @@ class MidiTextTransformer(nn.Module):
             d_model=d_model,
             nhead=n_head,
             dim_feedforward=dim_ff,
+            dropout=dropout,
             batch_first=True
         )
         self.encoder = nn.TransformerEncoder(enc_layer, num_layers=n_layer)
