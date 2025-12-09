@@ -1,4 +1,11 @@
-# classical-music-generation-model
+# Classical Music Generation Model
+
+## What It Does
+
+What our project does is that we generated new classical-style piano music using a Transformer model and a Diffusion Model. We trained both models on a Mozart and Haydn MIDI dataset which is part of the dataset we found from Hugging Face (https://huggingface.co/datasets/drengskapur/midi-classical-music) which allowed our models to learn musical patterns directly from real compsitions. Our Transformer model generates music as sequences of musical tokens while our Diffusion model produces piano roll images to represent the generated music visually. We have built a web app where users can generate music, listen to them directly in the browser, can view the generated piano roll images, and are able to download the resulting MIDI files. With the Transformer portion of our web app, we also included an integration with OpenAI's ChatGPT Mini so that users can describe the type of misc they want to generate such as if the user wants to generate a sad song, a slow song, or an energetic song for example. Our main goal of this project is to create an accessible AI tool that can create coherent and expressive classical music in a way that is easy for anyone to use. With this goal in mind, we want our AI tool to help musicians, students, and musical hobbyists to experiment with music generation without requiring an technical or musical expertise.
+
+
+
 Machine learning experiment for generating classical-style music.
 
 ====== INSTALLATION ======
