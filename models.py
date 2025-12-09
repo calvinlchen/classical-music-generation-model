@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 from math import ceil
 from tqdm import tqdm
 
@@ -168,7 +169,7 @@ def generate_midi_tokens_with_transformer(
 
 def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
                           lr=1e-4, gen_freq=50, weight_decay=1e-4,
-                          device="cpu"):
+                          img_size=[88, 1024], device="cpu"):
     """
     Train the diffusion model to predict noise.
 
@@ -211,7 +212,15 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
                 x_t = sqrt_alphas_t * batch + sqrt_one_minus_alphas_t * noise
 
                 predicted_noise = model(x_t, t)
-                loss = F.mse_loss(predicted_noise, noise)
+
+                # batch ~ x_0 in [-1, 1]; note pixels are near +1
+                note_mask = (batch > -0.5).float()  # 1 where there was a note
+                # Broadcast to match noise shape
+                weight = 1.0 + 4.0 * note_mask      # upweight note regions 5x
+
+                mse = (predicted_noise - noise) ** 2
+                loss = (weight * mse).mean()
+                # loss = F.mse_loss(predicted_noise, noise)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -225,9 +234,22 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
 
         # Generate and display sample image
         print(f"\nEpoch {(epoch_group+1)*gen_freq}: Loss = {avg_loss:.4f}")
-        sample_img = sample_image(model, alphas, device)
-        show_image_tensor(
-            sample_img, title=f"Generated at epoch {(epoch_group+1)*gen_freq}")
+
+        num_samples = 8          # e.g. 2x4 grid
+        rows, cols = 2, 4
+        samples = [sample_image(model, alphas, device)
+                   for _ in range(num_samples)]
+
+        fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 2))
+        for ax, img in zip(axes.flat, samples):
+            show_image_tensor(img, ax=ax)   # helper handles 1-channel rolls
+        # if fewer samples than slots, hide extra axes
+        for ax in axes.flat[num_samples:]:
+            ax.axis("off")
+
+        fig.suptitle(f"Generated at epoch {(epoch_group+1)*gen_freq}")
+        plt.tight_layout()
+        plt.show()
         print()
 
     print("="*70)
@@ -300,7 +322,7 @@ class SimpleUNet(nn.Module):
 
 
 @torch.no_grad()
-def sample_image(model, alphas, device):
+def sample_image(model, alphas, device, img_size=[88, 1024]):
     """
     Generate one image through reverse diffusion.
 
@@ -316,7 +338,7 @@ def sample_image(model, alphas, device):
     t = len(alphas)
 
     # Start from pure noise
-    x = torch.randn(1, 88, 1024, device=device)   # 1-channel piano-roll image
+    x = torch.randn(1, img_size[0], img_size[1], device=device)   # 1-channel piano-roll image
 
     for step in reversed(range(t)):
         a = alphas[step]

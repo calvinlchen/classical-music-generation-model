@@ -129,10 +129,13 @@ class VocabBuilder:
         """Convert list of token IDs → text string"""
         return " ".join(self.itos[int(i)] for i in ids)
 
+
 class PianoRollDataset(Dataset):
     """
-    Dataset for piano-roll images saved as 88x1024 grayscale PNGs.
-    Each sample: tensor [1, 88, 1024] normalized to [-1, 1].
+    Dataset for piano-roll images saved as grayscale PNGs.
+    Each sample: tensor [1, 88, x] normalized to [-1, 1].
+    x should be divisible by 8, for UNet pooling.
+    All samples must be the same image size.
     """
 
     def __init__(self, data_dir):
@@ -149,12 +152,14 @@ class PianoRollDataset(Dataset):
     def __getitem__(self, idx):
         img = Image.open(self.image_files[idx]).convert("L")  # grayscale
         arr = np.array(img, dtype=np.float32)                 # [H, W]
+        H, W = arr.shape
 
-        if arr.shape != (88, 1024):
-            raise ValueError(f"Expected image shape (88, 1024), got {arr.shape}")
+        # Make sure size works with 3 levels of 2x2 pooling
+        assert H % 8 == 0 and W % 8 == 0, f"Bad size {H}x{W} for UNet"
 
         arr = arr / 255.0          # [0,1]
         arr = arr * 2.0 - 1.0      # [-1,1]
 
-        x = torch.from_numpy(arr).unsqueeze(0)   # [1, 88, 1024]
+        # [1, 88, 1024] using default sizes
+        x = torch.from_numpy(arr).unsqueeze(0)
         return x
