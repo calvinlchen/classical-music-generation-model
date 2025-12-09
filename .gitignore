@@ -6,3 +6,4 @@ venv
 __pycache__/
 midi-classical-music/
 anaconda_projects/
+.env
