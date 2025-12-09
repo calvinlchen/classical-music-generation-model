@@ -491,7 +491,8 @@ def pianoroll_images_to_midi(
     global_step_offset = 0
     for win in rolls:
         # win: [NUM_PITCHES, STEPS_PER_WINDOW] with 0 or 255
-        win_on = win > 0  # boolean
+        ON_THRESHOLD = 128  # midway between 0–255
+        win_on = win >= ON_THRESHOLD
 
         for row in range(NUM_PITCHES):
             pitch = PITCH_MIN + row
