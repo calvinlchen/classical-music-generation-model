@@ -213,10 +213,13 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
 
                 predicted_noise = model(x_t, t)
 
+                # CUSTOM LOSS FUNCTION found to be necessary
                 # batch ~ x_0 in [-1, 1]; note pixels are near +1
                 note_mask = (batch > -0.5).float()  # 1 where there was a note
-                # Broadcast to match noise shape
-                weight = 1.0 + 4.0 * note_mask      # upweight note regions 5x
+                alpha_start, alpha_end = 1.0, 0.25  # Note-on weight decays over time
+                progress = (epoch_group * gen_freq + epoch) / num_epochs
+                alpha = alpha_start + (alpha_end - alpha_start) * progress
+                weight = 1.0 + alpha * note_mask
 
                 mse = (predicted_noise - noise) ** 2
                 loss = (weight * mse).mean()
