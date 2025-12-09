@@ -1,6 +1,9 @@
 from pathlib import Path
-from midi_conversion import midi_to_text
+from torch.utils.data import Dataset
+from midi_conversion import midi_to_text, midi_to_pianoroll_images
 import mido
+from PIL import Image
+import numpy as np
 import torch
 
 # Constants
@@ -71,6 +74,26 @@ def process_midis_to_text(midis):
 
     return texts
 
+def process_midis_to_images(midis):
+    """
+    Process a series of MIDI files into images by calling the
+    midi_to_pianoroll_images method from midi_conversion.py
+    
+    :param midis: List of individual mido.MidiObject objects to convert.
+                  (No composer info included)
+    """
+    images = []
+
+    for i, midi in enumerate(midis):
+        midi_images = midi_to_pianoroll_images(midi)
+        for image in midi_images:
+            images.append(image)
+        print(f"Processed {i}/{len(midis)} MIDI files", end="\r")
+
+    print(f"Successfully processed {len(midis)} MIDIs into {len(images)} images.")
+
+    return images
+
 
 class VocabBuilder:
     def __init__(self, train_seqs, add_unknown_token=True):
@@ -105,3 +128,33 @@ class VocabBuilder:
     def decode(self, ids):
         """Convert list of token IDs → text string"""
         return " ".join(self.itos[int(i)] for i in ids)
+
+class PianoRollDataset(Dataset):
+    """
+    Dataset for piano-roll images saved as 88x1024 grayscale PNGs.
+    Each sample: tensor [1, 88, 1024] normalized to [-1, 1].
+    """
+
+    def __init__(self, data_dir):
+        self.data_dir = Path(data_dir)
+        self.image_files = sorted(self.data_dir.glob("*.png"))
+        if not self.image_files:
+            raise ValueError(f"No images found in {data_dir}")
+
+        print(f"Found {len(self.image_files)} images in {data_dir}")
+
+    def __len__(self):
+        return len(self.image_files)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.image_files[idx]).convert("L")  # grayscale
+        arr = np.array(img, dtype=np.float32)                 # [H, W]
+
+        if arr.shape != (88, 1024):
+            raise ValueError(f"Expected image shape (88, 1024), got {arr.shape}")
+
+        arr = arr / 255.0          # [0,1]
+        arr = arr * 2.0 - 1.0      # [-1,1]
+
+        x = torch.from_numpy(arr).unsqueeze(0)   # [1, 88, 1024]
+        return x

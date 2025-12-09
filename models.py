@@ -1,7 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from math import ceil
+from tqdm import tqdm
 
+
+from model_helpers import SinusoidalPositionEmbedding, ResidualBlock, prepare_noise_schedule, show_image_tensor
 from model_helpers import get_batch, estimate_loss
 
 
@@ -151,3 +155,170 @@ def generate_midi_tokens_with_transformer(
             break
 
     return x[0].tolist()
+
+# ----- IMAGE-RELATED DIFFUSION MODEL CLASSES AND METHODS -----
+
+def train_diffusion_model(model, dataloader, timesteps, num_epochs=500, lr=1e-4, gen_freq=50, device="cpu"):
+    """
+    Train the diffusion model to predict noise.
+    
+    Args:
+        model: SimpleUNet model
+        dataloader: DataLoader with training images
+        num_epochs: Total number of training epochs
+        lr: Learning rate
+        gen_freq: Generate sample image every N epochs
+    
+    Returns:
+        losses: List of average loss per epoch
+    """
+    _, alphas = prepare_noise_schedule(device, timesteps=timesteps)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    losses = []
+    
+    num_epoch_groups = ceil(num_epochs / gen_freq)
+    print(f"\nGenerating example every {gen_freq} epochs.")
+    print("="*70)
+    
+    for epoch_group in range(num_epoch_groups):
+        pbar = tqdm(range(gen_freq), desc=f"Group {epoch_group+1}/{num_epoch_groups}")
+        
+        for epoch in pbar:
+            total_loss = 0
+            
+            for batch in dataloader:
+                batch = batch.to(device)
+                batch_size = batch.size(0)
+
+                t = torch.randint(0, timesteps, (batch_size,), device=device)
+                noise = torch.randn_like(batch)
+
+                sqrt_alphas_t = torch.sqrt(alphas[t]).view(-1, 1, 1, 1)
+                sqrt_one_minus_alphas_t = torch.sqrt(1 - alphas[t]).view(-1, 1, 1, 1)
+                x_t = sqrt_alphas_t * batch + sqrt_one_minus_alphas_t * noise
+
+                predicted_noise = model(x_t, t)
+                loss = F.mse_loss(predicted_noise, noise)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+
+            
+            avg_loss = total_loss / len(dataloader)
+            losses.append(avg_loss)
+            pbar.set_postfix({'loss': f'{avg_loss:.4f}'})
+        
+        # Generate and display sample image
+        print(f"\nEpoch {(epoch_group+1)*gen_freq}: Loss = {avg_loss:.4f}")
+        sample_img = sample_image(model, alphas, device)
+        show_image_tensor(sample_img, title=f"Generated at epoch {(epoch_group+1)*gen_freq}")
+        print()
+    
+    print("="*70)
+    print("Training complete!")
+    
+    return losses
+
+
+class SimpleUNet(nn.Module):
+    def __init__(self, channels=[16, 32, 64, 64], time_emb_dim=64):
+        super().__init__()
+
+        # Time embedding (unchanged)
+        self.time_mlp = nn.Sequential(
+            SinusoidalPositionEmbedding(time_emb_dim),
+            nn.Linear(time_emb_dim, time_emb_dim),
+            nn.ReLU()
+        )
+
+        # Initial conv: 1 input channel instead of 3
+        self.conv_in = nn.Conv2d(1, channels[0], 3, padding=1)
+
+        # Encoder (downsampling)
+        self.down1 = ResidualBlock(channels[0], channels[1], time_emb_dim)
+        self.down2 = ResidualBlock(channels[1], channels[2], time_emb_dim)
+        self.down3 = ResidualBlock(channels[2], channels[3], time_emb_dim)
+
+        # Bottleneck
+        self.bottleneck = ResidualBlock(channels[3], channels[3], time_emb_dim)
+
+        # Decoder (upsampling)
+        self.up3 = ResidualBlock(channels[3] + channels[2], channels[2], time_emb_dim)
+        self.up2 = ResidualBlock(channels[2] + channels[1], channels[1], time_emb_dim)
+        self.up1 = ResidualBlock(channels[1] + channels[0], channels[0], time_emb_dim)
+
+        # Output: 1 channel instead of 3
+        self.conv_out = nn.Conv2d(channels[0], 1, 3, padding=1)
+
+    def forward(self, x, t):
+        """
+        x: [B, 1, 88, 1024]
+        t: [B]
+        """
+        t_emb = self.time_mlp(t)        # [B, time_emb_dim]
+
+        x0 = self.conv_in(x)
+
+        # Encoder
+        x1 = self.down1(F.max_pool2d(x0, 2), t_emb)  # [B, c1, 44, 512]
+        x2 = self.down2(F.max_pool2d(x1, 2), t_emb)  # [B, c2, 22, 256]
+        x3 = self.down3(F.max_pool2d(x2, 2), t_emb)  # [B, c3, 11, 128]
+
+        # Bottleneck
+        x = self.bottleneck(x3, t_emb)
+
+        # Decoder with skip connections
+        x = F.interpolate(x, scale_factor=2, mode='nearest')    # [B, c3, 22, 256]
+        x = self.up3(torch.cat([x, x2], dim=1), t_emb)
+
+        x = F.interpolate(x, scale_factor=2, mode='nearest')    # [B, c2, 44, 512]
+        x = self.up2(torch.cat([x, x1], dim=1), t_emb)
+
+        x = F.interpolate(x, scale_factor=2, mode='nearest')    # [B, c1, 88, 1024]
+        x = self.up1(torch.cat([x, x0], dim=1), t_emb)
+
+        return self.conv_out(x)  # [B, 1, 88, 1024]
+
+@torch.no_grad()
+def sample_image(model, alphas, device):
+    """
+    Generate one image through reverse diffusion.
+    
+    Args:
+        model: Trained UNet model
+        alphas: Cumulative noise schedule from prepare_noise_schedule
+        device: torch device
+    
+    Returns:
+        x: Generated image tensor (1, 88, 1024) normalized to [-1, 1]
+    """
+    alphas = alphas.to(device)
+    t = len(alphas)
+    
+    # Start from pure noise
+    x = torch.randn(1, 88, 1024, device=device)   # 1-channel piano-roll image
+
+    for step in reversed(range(t)):
+        a = alphas[step]
+        sqrt_a = torch.sqrt(a)
+        sqrt_a_diff = torch.sqrt(1 - a).to(device)
+        
+        x_batch = x.unsqueeze(0)          # [1, 1, 88, 1024]
+        t_batch = torch.tensor([step], device=device)
+
+        noise_pred = model(x_batch, t_batch).squeeze(0)  # [1, 88, 1024]
+
+        pred_x0 = (x - sqrt_a_diff * noise_pred) / sqrt_a
+        pred_x0 = torch.clamp(pred_x0, -1.0, 1.0)
+
+        if step > 0:
+            z = torch.randn_like(x)
+            a_prev = alphas[step - 1]
+            x = torch.sqrt(a_prev) * pred_x0 + torch.sqrt(1 - a_prev) * z
+        else:
+            x = pred_x0
+
+    return x  # [1, 88, 1024]

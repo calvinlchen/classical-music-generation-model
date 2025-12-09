@@ -1,3 +1,5 @@
+import numpy as np
+from PIL import Image
 import mido
 
 # Constants
@@ -15,16 +17,16 @@ def midi_to_note_name(midi_note_number: int) -> str:
     return f"{note_name}{octave}"
 
 
-def normalize_midi(mid: mido.MidiFile) -> mido.MidiFile:
+def normalize_midi(mid: mido.MidiFile, target_tpb: int = TARGET_TPB) -> mido.MidiFile:
     """
     Return a copy of `mid` whose ticks_per_beat is TARGET_TPB.
     Rescales all delta times to preserve musical timing.
     """
-    if mid.ticks_per_beat == TARGET_TPB:
+    if mid.ticks_per_beat == target_tpb:
         return mid
 
-    scale = TARGET_TPB / mid.ticks_per_beat
-    new_mid = mido.MidiFile(ticks_per_beat=TARGET_TPB)
+    scale = target_tpb / mid.ticks_per_beat
+    new_mid = mido.MidiFile(ticks_per_beat=target_tpb)
 
     for track in mid.tracks:
         new_track = mido.MidiTrack()
@@ -341,6 +343,220 @@ def text_to_midi(text: str) -> mido.MidiFile:
         delta = abs_ticks - last_tick
         msg.time = delta
         last_tick = abs_ticks
+        track.append(msg)
+
+    return mid
+
+# ----- MIDI <-> IMAGE CONVERSION -----
+
+PITCH_MIN = 21           # A0
+PITCH_MAX = 108          # C8
+NUM_PITCHES = PITCH_MAX - PITCH_MIN + 1  # 88
+
+STEPS_PER_BEAT = 16
+BEATS_PER_WINDOW = 64
+STEPS_PER_WINDOW = STEPS_PER_BEAT * BEATS_PER_WINDOW  # 256
+
+STEP_TICKS = TARGET_TPB // STEPS_PER_BEAT  # 480/16 = 30
+
+
+# MIDI normalization & note extraction
+
+def extract_notes_tick_values(mid: mido.MidiFile):
+    """
+    Extract notes as (pitch, start_tick, end_tick), ignoring velocity.
+    Returns:
+        notes: list of (pitch, start_tick, end_tick)
+    """
+    mid = normalize_midi(mid, TARGET_TPB)
+
+    active = {}   # (note, channel) -> list of start_ticks
+    notes = []
+
+    for track in mid.tracks:
+        abs_ticks = 0
+        for msg in track:
+            abs_ticks += msg.time
+
+            if msg.type == "note_on" and msg.velocity > 0:
+                key = (msg.note, getattr(msg, "channel", 0))
+                active.setdefault(key, []).append(abs_ticks)
+
+            elif msg.type in ("note_off", "note_on"):
+                # note_off or note_on with vel=0
+                if msg.type == "note_on" and msg.velocity > 0:
+                    # already handled above
+                    continue
+                key = (msg.note, getattr(msg, "channel", 0))
+                if key in active and active[key]:
+                    start_tick = active[key].pop()
+                    end_tick = max(start_tick + 1, abs_ticks)  # at least 1 tick duration
+                    notes.append((msg.note, start_tick, end_tick))
+
+    return notes
+
+
+# MIDI to images
+
+def midi_to_pianoroll_images(midi: mido.MidiFile):
+    """
+    Convert a MIDI file into a list of binary piano-roll images.
+
+    Returns:
+        images: list of PIL.Image in mode "L", each (NUM_PITCHES, STEPS_PER_WINDOW)
+                0 = black (off), 255 = white (on).
+    """
+    notes = extract_notes_tick_values(midi)
+
+    # Convert notes into step indices
+    note_steps = []
+    max_end_step = 0
+
+    for pitch, start_tick, end_tick in notes:
+        if pitch < PITCH_MIN or pitch > PITCH_MAX:
+            continue
+
+        # global step indices (quantized)
+        start_step = start_tick // STEP_TICKS
+        end_step = (end_tick + STEP_TICKS - 1) // STEP_TICKS  # ceil
+
+        if end_step <= start_step:
+            end_step = start_step + 1  # at least one step
+
+        note_steps.append((pitch, start_step, end_step))
+        if end_step > max_end_step:
+            max_end_step = end_step
+
+    # If there are no notes, just return one empty window
+    if max_end_step == 0:
+        empty_arr = np.zeros((NUM_PITCHES, STEPS_PER_WINDOW), dtype=np.uint8)
+        return [Image.fromarray(empty_arr, mode="L")]
+
+    # Number of windows needed
+    num_windows = (max_end_step + STEPS_PER_WINDOW - 1) // STEPS_PER_WINDOW
+
+    # Initialize binary arrays
+    windows = [
+        np.zeros((NUM_PITCHES, STEPS_PER_WINDOW), dtype=np.uint8)
+        for _ in range(num_windows)
+    ]
+
+    # Fill in notes
+    for pitch, start_step, end_step in note_steps:
+        row = pitch - PITCH_MIN
+        for s in range(start_step, end_step):
+            w = s // STEPS_PER_WINDOW
+            c = s % STEPS_PER_WINDOW
+            if 0 <= w < num_windows:
+                windows[w][row, c] = 255  # white pixel = note on
+
+    # Convert to images
+    images = [Image.fromarray(win, mode="L") for win in windows]
+    return images
+
+
+# images to MIDI
+
+def pianoroll_images_to_midi(
+    images,
+    tempo_bpm: int = 120,
+    time_signature=(4, 4),
+) -> mido.MidiFile:
+    """
+    Convert a list of piano-roll images (as from midi_to_pianoroll_images)
+    back into a MIDI file with ticks_per_beat = TARGET_TPB.
+
+    Args:
+        images: list of PIL.Image (mode "L") or numpy arrays shaped [NUM_PITCHES, STEPS_PER_WINDOW]
+                with values 0 (off) or 255 (on).
+    """
+    # Ensure numpy arrays of shape [NUM_PITCHES, STEPS_PER_WINDOW]
+    rolls = []
+    for img in images:
+        if isinstance(img, Image.Image):
+            arr = np.array(img, dtype=np.uint8)
+        else:
+            arr = np.array(img, dtype=np.uint8)
+
+        # Expect [H, W] = [NUM_PITCHES, STEPS_PER_WINDOW]
+        if arr.shape != (NUM_PITCHES, STEPS_PER_WINDOW):
+            raise ValueError(f"Expected shape {(NUM_PITCHES, STEPS_PER_WINDOW)}, got {arr.shape}")
+
+        rolls.append(arr)
+
+    # Collect notes as (pitch, start_step, end_step)
+    notes = []
+
+    global_step_offset = 0
+    for win in rolls:
+        # win: [NUM_PITCHES, STEPS_PER_WINDOW] with 0 or 255
+        win_on = win > 0  # boolean
+
+        for row in range(NUM_PITCHES):
+            pitch = PITCH_MIN + row
+            is_on = False
+            start_step = 0
+
+            for c in range(STEPS_PER_WINDOW):
+                on = bool(win_on[row, c])
+                if on and not is_on:
+                    is_on = True
+                    start_step = global_step_offset + c
+                elif not on and is_on:
+                    is_on = False
+                    end_step = global_step_offset + c
+                    notes.append((pitch, start_step, end_step))
+
+            # handle note that runs to end of window
+            if is_on:
+                end_step = global_step_offset + STEPS_PER_WINDOW
+                notes.append((pitch, start_step, end_step))
+
+        global_step_offset += STEPS_PER_WINDOW
+
+    # Build MIDI file from notes
+    mid = mido.MidiFile(ticks_per_beat=TARGET_TPB)
+    track = mido.MidiTrack()
+    mid.tracks.append(track)
+
+    # Meta messages
+    tempo = mido.bpm2tempo(tempo_bpm)
+    num, den = time_signature
+    track.append(mido.MetaMessage("set_tempo", tempo=tempo, time=0))
+    track.append(
+        mido.MetaMessage(
+            "time_signature",
+            numerator=num,
+            denominator=den,
+            clocks_per_click=24,
+            notated_32nd_notes_per_beat=8,
+            time=0,
+        )
+    )
+
+    # Create note_on / note_off events in absolute ticks
+    events = []  # list of (tick, type, pitch)
+    for pitch, start_step, end_step in notes:
+        start_tick = start_step * STEP_TICKS
+        end_tick = end_step * STEP_TICKS
+
+        events.append((start_tick, "on", pitch))
+        events.append((end_tick, "off", pitch))
+
+    # Sort events: by time, then note_off before note_on at same tick
+    events.sort(key=lambda e: (e[0], 0 if e[1] == "off" else 1, e[2]))
+
+    # Convert absolute to delta times
+    last_tick = 0
+    for tick, etype, pitch in events:
+        delta = tick - last_tick
+        last_tick = tick
+
+        if etype == "on":
+            msg = mido.Message("note_on", note=pitch, velocity=100, time=delta)
+        else:
+            msg = mido.Message("note_off", note=pitch, velocity=0, time=delta)
+
         track.append(msg)
 
     return mid
