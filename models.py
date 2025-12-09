@@ -95,3 +95,57 @@ def train_midi_text_transformer(
             )
 
     return model
+
+@torch.no_grad()
+def generate_midi_tokens_with_transformer(
+    model: MidiTextTransformer,
+    sos_id: int,
+    eos_id: int,
+    start_tokens=None,
+    max_new_tokens: int = 1000,
+    device: str | torch.device | None = None,
+):
+    """
+    Autoregressively generate token IDs from a trained model.
+
+    Args:
+        model:          trained MidiTextTransformer
+        sos_id:         integer ID for SOS token
+        eos_id:         integer ID for EOS token
+        start_tokens:   list of int to seed generation (optional)
+        max_new_tokens: max number of new tokens to sample
+        device:         device to run on (defaults to model's device)
+
+    Returns:
+        List[int]: the full token sequence (including seed & generated)
+    """
+    model.eval()
+
+    if device is None:
+        device = next(model.parameters()).device
+    else:
+        device = torch.device(device)
+
+    block_size = model.block_size
+
+    if start_tokens is None:
+        x = torch.tensor([[sos_id]], dtype=torch.long, device=device)
+    else:
+        x = torch.tensor([start_tokens], dtype=torch.long, device=device)
+
+    for _ in range(max_new_tokens):
+        # only feed the last block_size tokens
+        x_cond = x[:, -block_size:]
+
+        logits = model(x_cond)          # [1, T, vocab_size]
+        logits = logits[:, -1, :]       # [1, vocab_size] – last time step
+        probs = torch.softmax(logits, dim=-1)
+
+        next_id = torch.multinomial(probs, num_samples=1)  # [1, 1]
+        x = torch.cat([x, next_id], dim=1)
+
+        # stop at EOS
+        if int(next_id[0, 0]) == eos_id:
+            break
+
+    return x[0].tolist()
