@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from math import ceil
 from tqdm import tqdm
+import os
 
 
 from model_helpers import SinusoidalPositionEmbedding, ResidualBlock
@@ -169,7 +170,9 @@ def generate_midi_tokens_with_transformer(
 
 def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
                           lr=1e-4, gen_freq=50, weight_decay=1e-4,
-                          img_size=[88, 1024], device="cpu"):
+                          img_size=[88, 1024], device="cpu",
+                          save_dir="models/diffusion_checkpoints",
+                          save_every=20, save_checkpoints=True):
     """
     Train the diffusion model to predict noise.
 
@@ -183,6 +186,8 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
     Returns:
         losses: List of average loss per epoch
     """
+    os.makedirs(save_dir, exist_ok=True)
+
     _, alphas = prepare_noise_schedule(device, timesteps=timesteps)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr,
                                   weight_decay=weight_decay)
@@ -216,7 +221,7 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
                 # CUSTOM LOSS FUNCTION found to be necessary
                 # batch ~ x_0 in [-1, 1]; note pixels are near +1
                 note_mask = (batch > -0.5).float()  # 1 where there was a note
-                alpha_start, alpha_end = 1.0, 0.25  # Note-on weight decays over time
+                alpha_start, alpha_end = 1.1, 0.5  # Note-on weight decays
                 progress = (epoch_group * gen_freq + epoch) / num_epochs
                 alpha = alpha_start + (alpha_end - alpha_start) * progress
                 weight = 1.0 + alpha * note_mask
@@ -255,6 +260,20 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
         plt.show()
         print()
 
+        if save_checkpoints and (epoch % save_every == 0):
+            ckpt_path = os.path.join(save_dir,
+                                     f"diffusion_epoch_{epoch:04d}.pt")
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "loss": avg_loss,
+                },
+                ckpt_path,
+            )
+            print(f"Saved checkpoint to {ckpt_path}")
+
     print("="*70)
     print("Training complete!")
 
@@ -262,7 +281,7 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
 
 
 class SimpleUNet(nn.Module):
-    def __init__(self, channels=[16, 32, 64, 64], time_emb_dim=64):
+    def __init__(self, channels=[32, 64, 128, 128], time_emb_dim=64):
         super().__init__()
 
         # Time embedding (unchanged)
@@ -341,7 +360,7 @@ def sample_image(model, alphas, device, img_size=[88, 1024]):
     t = len(alphas)
 
     # Start from pure noise
-    x = torch.randn(1, img_size[0], img_size[1], device=device)   # 1-channel piano-roll image
+    x = torch.randn(1, img_size[0], img_size[1], device=device)  # 1 channel
 
     for step in reversed(range(t)):
         a = alphas[step]
