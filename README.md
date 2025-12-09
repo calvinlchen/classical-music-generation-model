@@ -124,4 +124,15 @@ Our training results:
 
 ## Individual Contributions
 
+### Calvin Chen
 
+- Collected the dataset from Hugging Face and was able to performed data cleaning, preprocessing, and spliting the data for model training
+- Helped desgined and trained the Transformer model for music generation
+- Has designed and trained the Diffusion model to generate piano roll images
+- Implemented the backend API for running the models and generating the MIDI files
+- Helped built and deployed the React web application, and tested the features such as the audio playback, MIDI downloading, and the OpenAI integration feature
+
+### Johan Nino Espino
+- Has tested the entire project acorss different enviornments such as MacOS to ensure full compatibility for users
+- Helped developed all deliverables which includes the README.md file, the SETUP.md file, the documentation, and the evaluation summaries
+- Contributed by debugging the model training notebooks and confirmed that the diffusion and transformer ppelines works well from start to finish
