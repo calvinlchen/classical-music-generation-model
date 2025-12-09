@@ -5,7 +5,8 @@ from math import ceil
 from tqdm import tqdm
 
 
-from model_helpers import SinusoidalPositionEmbedding, ResidualBlock, prepare_noise_schedule, show_image_tensor
+from model_helpers import SinusoidalPositionEmbedding, ResidualBlock
+from model_helpers import prepare_noise_schedule, show_image_tensor
 from model_helpers import get_batch, estimate_loss
 
 
@@ -41,6 +42,7 @@ class MidiTextTransformer(nn.Module):
         logits = self.lm_head(h)
         return logits
 
+
 def train_midi_text_transformer(
     model: MidiTextTransformer,
     train_ids,
@@ -52,7 +54,8 @@ def train_midi_text_transformer(
     lr: float = 3e-4,
 ):
     """
-    Train a MozartTransformer using get_batch / estimate_loss from model_helpers.
+    Train a MozartTransformer using get_batch / estimate_loss from
+    model_helpers.
 
     Args:
         model:        instantiated MozartTransformer
@@ -80,7 +83,8 @@ def train_midi_text_transformer(
         logits = model(xb)  # [B, T, vocab_size]
 
         B, T, C = logits.shape
-        assert C == vocab_size, f"Logits last dim {C} != vocab_size {vocab_size}"
+        assert C == vocab_size, f"Logits last dim {C} != "\
+            f"vocab_size {vocab_size}"
 
         loss = F.cross_entropy(
             logits.view(B * T, C),
@@ -103,6 +107,7 @@ def train_midi_text_transformer(
             )
 
     return model
+
 
 @torch.no_grad()
 def generate_midi_tokens_with_transformer(
@@ -158,6 +163,7 @@ def generate_midi_tokens_with_transformer(
 
     return x[0].tolist()
 
+
 # ----- IMAGE-RELATED DIFFUSION MODEL CLASSES AND METHODS -----
 
 def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
@@ -165,14 +171,14 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
                           device="cpu"):
     """
     Train the diffusion model to predict noise.
-    
+
     Args:
         model: SimpleUNet model
         dataloader: DataLoader with training images
         num_epochs: Total number of training epochs
         lr: Learning rate
         gen_freq: Generate sample image every N epochs
-    
+
     Returns:
         losses: List of average loss per epoch
     """
@@ -180,18 +186,18 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr,
                                   weight_decay=weight_decay)
     losses = []
-    
+
     num_epoch_groups = ceil(num_epochs / gen_freq)
     print(f"\nGenerating example every {gen_freq} epochs.")
     print("="*70)
-    
+
     for epoch_group in range(num_epoch_groups):
         pbar = tqdm(range(gen_freq),
                     desc=f"Group {epoch_group+1}/{num_epoch_groups}")
-        
+
         for epoch in pbar:
             total_loss = 0
-            
+
             for batch in dataloader:
                 batch = batch.to(device)
                 batch_size = batch.size(0)
@@ -200,7 +206,8 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
                 noise = torch.randn_like(batch)
 
                 sqrt_alphas_t = torch.sqrt(alphas[t]).view(-1, 1, 1, 1)
-                sqrt_one_minus_alphas_t = torch.sqrt(1 - alphas[t]).view(-1, 1, 1, 1)
+                sqrt_one_minus_alphas_t = torch.sqrt(
+                    1 - alphas[t]).view(-1, 1, 1, 1)
                 x_t = sqrt_alphas_t * batch + sqrt_one_minus_alphas_t * noise
 
                 predicted_noise = model(x_t, t)
@@ -212,20 +219,20 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
 
                 total_loss += loss.item()
 
-            
             avg_loss = total_loss / len(dataloader)
             losses.append(avg_loss)
             pbar.set_postfix({'loss': f'{avg_loss:.4f}'})
-        
+
         # Generate and display sample image
         print(f"\nEpoch {(epoch_group+1)*gen_freq}: Loss = {avg_loss:.4f}")
         sample_img = sample_image(model, alphas, device)
-        show_image_tensor(sample_img, title=f"Generated at epoch {(epoch_group+1)*gen_freq}")
+        show_image_tensor(
+            sample_img, title=f"Generated at epoch {(epoch_group+1)*gen_freq}")
         print()
-    
+
     print("="*70)
     print("Training complete!")
-    
+
     return losses
 
 
@@ -252,9 +259,12 @@ class SimpleUNet(nn.Module):
         self.bottleneck = ResidualBlock(channels[3], channels[3], time_emb_dim)
 
         # Decoder (upsampling)
-        self.up3 = ResidualBlock(channels[3] + channels[2], channels[2], time_emb_dim)
-        self.up2 = ResidualBlock(channels[2] + channels[1], channels[1], time_emb_dim)
-        self.up1 = ResidualBlock(channels[1] + channels[0], channels[0], time_emb_dim)
+        self.up3 = ResidualBlock(
+            channels[3] + channels[2], channels[2], time_emb_dim)
+        self.up2 = ResidualBlock(
+            channels[2] + channels[1], channels[1], time_emb_dim)
+        self.up1 = ResidualBlock(
+            channels[1] + channels[0], channels[0], time_emb_dim)
 
         # Output: 1 channel instead of 3
         self.conv_out = nn.Conv2d(channels[0], 1, 3, padding=1)
@@ -277,33 +287,34 @@ class SimpleUNet(nn.Module):
         x = self.bottleneck(x3, t_emb)
 
         # Decoder with skip connections
-        x = F.interpolate(x, scale_factor=2, mode='nearest')    # [B, c3, 22, 256]
+        x = F.interpolate(x, scale_factor=2, mode='nearest')    # [B,c3,22,256]
         x = self.up3(torch.cat([x, x2], dim=1), t_emb)
 
-        x = F.interpolate(x, scale_factor=2, mode='nearest')    # [B, c2, 44, 512]
+        x = F.interpolate(x, scale_factor=2, mode='nearest')    # [B,c2,44,512]
         x = self.up2(torch.cat([x, x1], dim=1), t_emb)
 
-        x = F.interpolate(x, scale_factor=2, mode='nearest')    # [B, c1, 88, 1024]
+        x = F.interpolate(x, scale_factor=2, mode='nearest')   # [B,c1,88,1024]
         x = self.up1(torch.cat([x, x0], dim=1), t_emb)
 
         return self.conv_out(x)  # [B, 1, 88, 1024]
+
 
 @torch.no_grad()
 def sample_image(model, alphas, device):
     """
     Generate one image through reverse diffusion.
-    
+
     Args:
         model: Trained UNet model
         alphas: Cumulative noise schedule from prepare_noise_schedule
         device: torch device
-    
+
     Returns:
         x: Generated image tensor (1, 88, 1024) normalized to [-1, 1]
     """
     alphas = alphas.to(device)
     t = len(alphas)
-    
+
     # Start from pure noise
     x = torch.randn(1, 88, 1024, device=device)   # 1-channel piano-roll image
 
@@ -311,7 +322,7 @@ def sample_image(model, alphas, device):
         a = alphas[step]
         sqrt_a = torch.sqrt(a)
         sqrt_a_diff = torch.sqrt(1 - a).to(device)
-        
+
         x_batch = x.unsqueeze(0)          # [1, 1, 88, 1024]
         t_batch = torch.tensor([step], device=device)
 
