@@ -35,7 +35,8 @@ class MidiTextTransformer(nn.Module):
         h = self.tok_emb(x) + self.pos_emb(pos)
 
         # causal mask: prevent attention to future positions
-        mask = torch.triu(torch.ones(T, T, device=x.device) * float("-inf"), diagonal=1)
+        mask = torch.triu(torch.ones(T, T, device=x.device) * float("-inf"),
+                          diagonal=1)
         h = self.encoder(h, mask)
         logits = self.lm_head(h)
         return logits
@@ -91,7 +92,8 @@ def train_midi_text_transformer(
         optimizer.step()
 
         if step % eval_interval == 0:
-            losses = estimate_loss(model, train_ids, val_ids, vocab_size, device=device)
+            losses = estimate_loss(model, train_ids, val_ids, vocab_size,
+                                   device=device)
             train_loss, train_acc = losses["train"]
             val_loss, val_acc = losses["val"]
             print(
@@ -158,7 +160,9 @@ def generate_midi_tokens_with_transformer(
 
 # ----- IMAGE-RELATED DIFFUSION MODEL CLASSES AND METHODS -----
 
-def train_diffusion_model(model, dataloader, timesteps, num_epochs=500, lr=1e-4, gen_freq=50, device="cpu"):
+def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
+                          lr=1e-4, gen_freq=50, weight_decay=1e-4,
+                          device="cpu"):
     """
     Train the diffusion model to predict noise.
     
@@ -173,7 +177,8 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500, lr=1e-4,
         losses: List of average loss per epoch
     """
     _, alphas = prepare_noise_schedule(device, timesteps=timesteps)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr,
+                                  weight_decay=weight_decay)
     losses = []
     
     num_epoch_groups = ceil(num_epochs / gen_freq)
@@ -181,7 +186,8 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500, lr=1e-4,
     print("="*70)
     
     for epoch_group in range(num_epoch_groups):
-        pbar = tqdm(range(gen_freq), desc=f"Group {epoch_group+1}/{num_epoch_groups}")
+        pbar = tqdm(range(gen_freq),
+                    desc=f"Group {epoch_group+1}/{num_epoch_groups}")
         
         for epoch in pbar:
             total_loss = 0
