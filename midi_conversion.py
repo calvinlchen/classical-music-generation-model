@@ -347,6 +347,7 @@ def text_to_midi(text: str) -> mido.MidiFile:
 
     return mid
 
+
 # ----- MIDI <-> IMAGE CONVERSION -----
 
 PITCH_MIN = 21           # A0
@@ -354,7 +355,7 @@ PITCH_MAX = 108          # C8
 NUM_PITCHES = PITCH_MAX - PITCH_MIN + 1  # 88
 
 STEPS_PER_BEAT = 16
-BEATS_PER_WINDOW = 64
+BEATS_PER_WINDOW = 16
 STEPS_PER_WINDOW = STEPS_PER_BEAT * BEATS_PER_WINDOW  # 256
 
 STEP_TICKS = TARGET_TPB // STEPS_PER_BEAT  # 480/16 = 30
