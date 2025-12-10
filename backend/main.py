@@ -55,7 +55,7 @@ app.add_middleware(
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load trained diffusion model checkpoint once at startup
-CHECKPOINT_PATH = "../models/diffusion_checkpoints/diffusion_epoch_0200.pt"
+CHECKPOINT_PATH = "../models/diffusion_12000/diffusion_epoch_0010.pt"
 
 diff_model = SimpleUNet().to(DEVICE)
 checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
@@ -84,7 +84,7 @@ transformer_model.load_state_dict(transformer_weights)
 
 def generate_midi_and_image_bytes_from_diffusion(
     T: int = 100,
-    height: int = 88,
+    height: int = 176,
     width: int = 256,
 ) -> tuple[bytes, bytes]:
     """

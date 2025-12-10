@@ -360,9 +360,11 @@ STEPS_PER_WINDOW = STEPS_PER_BEAT * BEATS_PER_WINDOW  # 256
 
 STEP_TICKS = TARGET_TPB // STEPS_PER_BEAT  # 480/16 = 30
 
+PITCH_ROWS_PER_NOTE = 2
+IMAGE_HEIGHT = NUM_PITCHES * PITCH_ROWS_PER_NOTE  # 176
+
 
 # MIDI normalization & note extraction
-
 def extract_notes_tick_values(mid: mido.MidiFile):
     """
     Extract notes as (pitch, start_tick, end_tick), ignoring velocity.
@@ -404,7 +406,8 @@ def midi_to_pianoroll_images(midi: mido.MidiFile):
     Convert a MIDI file into a list of binary piano-roll images.
 
     Returns:
-        images: list of PIL.Image in mode "L", each (NUM_PITCHES, STEPS_PER_WINDOW)
+        images: list of PIL.Image in mode "L", each (IMAGE_HEIGHT, STEPS_PER_WINDOW)
+                where IMAGE_HEIGHT = NUM_PITCHES * PITCH_ROWS_PER_NOTE.
                 0 = black (off), 255 = white (on).
     """
     notes = extract_notes_tick_values(midi)
@@ -430,7 +433,7 @@ def midi_to_pianoroll_images(midi: mido.MidiFile):
 
     # If there are no notes, just return one empty window
     if max_end_step == 0:
-        empty_arr = np.zeros((NUM_PITCHES, STEPS_PER_WINDOW), dtype=np.uint8)
+        empty_arr = np.zeros((IMAGE_HEIGHT, STEPS_PER_WINDOW), dtype=np.uint8)
         return [Image.fromarray(empty_arr, mode="L")]
 
     # Number of windows needed
@@ -438,18 +441,21 @@ def midi_to_pianoroll_images(midi: mido.MidiFile):
 
     # Initialize binary arrays
     windows = [
-        np.zeros((NUM_PITCHES, STEPS_PER_WINDOW), dtype=np.uint8)
+        np.zeros((IMAGE_HEIGHT, STEPS_PER_WINDOW), dtype=np.uint8)
         for _ in range(num_windows)
     ]
 
-    # Fill in notes
+    # Fill in notes (2 rows per pitch)
     for pitch, start_step, end_step in note_steps:
-        row = pitch - PITCH_MIN
+        pitch_index = pitch - PITCH_MIN
+        row_base = pitch_index * PITCH_ROWS_PER_NOTE
+
         for s in range(start_step, end_step):
             w = s // STEPS_PER_WINDOW
             c = s % STEPS_PER_WINDOW
             if 0 <= w < num_windows:
-                windows[w][row, c] = 255  # white pixel = note on
+                for r in range(PITCH_ROWS_PER_NOTE):
+                    windows[w][row_base + r, c] = 255  # white pixel = note on
 
     # Convert to images
     images = [Image.fromarray(win, mode="L") for win in windows]
@@ -462,16 +468,19 @@ def pianoroll_images_to_midi(
     images,
     tempo_bpm: int = 120,
     time_signature=(4, 4),
+    
 ) -> mido.MidiFile:
     """
     Convert a list of piano-roll images (as from midi_to_pianoroll_images)
     back into a MIDI file with ticks_per_beat = TARGET_TPB.
 
     Args:
-        images: list of PIL.Image (mode "L") or numpy arrays shaped [NUM_PITCHES, STEPS_PER_WINDOW]
+        images: list of PIL.Image (mode "L") or numpy arrays shaped
+                [IMAGE_HEIGHT, STEPS_PER_WINDOW], where
+                IMAGE_HEIGHT = NUM_PITCHES * PITCH_ROWS_PER_NOTE,
                 with values 0 (off) or 255 (on).
     """
-    # Ensure numpy arrays of shape [NUM_PITCHES, STEPS_PER_WINDOW]
+    # Ensure numpy arrays of shape [IMAGE_HEIGHT, STEPS_PER_WINDOW]
     rolls = []
     for img in images:
         if isinstance(img, Image.Image):
@@ -479,9 +488,9 @@ def pianoroll_images_to_midi(
         else:
             arr = np.array(img, dtype=np.uint8)
 
-        # Expect [H, W] = [NUM_PITCHES, STEPS_PER_WINDOW]
-        if arr.shape != (NUM_PITCHES, STEPS_PER_WINDOW):
-            raise ValueError(f"Expected shape {(NUM_PITCHES, STEPS_PER_WINDOW)}, got {arr.shape}")
+        # Expect [H, W] = [IMAGE_HEIGHT, STEPS_PER_WINDOW]
+        if arr.shape != (IMAGE_HEIGHT, STEPS_PER_WINDOW):
+            raise ValueError(f"Expected shape {(IMAGE_HEIGHT, STEPS_PER_WINDOW)}, got {arr.shape}")
 
         rolls.append(arr)
 
@@ -489,18 +498,26 @@ def pianoroll_images_to_midi(
     notes = []
 
     global_step_offset = 0
+    ON_THRESHOLD = 128  # midway between 0–255
+
     for win in rolls:
-        # win: [NUM_PITCHES, STEPS_PER_WINDOW] with 0 or 255
-        ON_THRESHOLD = 128  # midway between 0–255
+        # win: [IMAGE_HEIGHT, STEPS_PER_WINDOW] with 0 or 255
         win_on = win >= ON_THRESHOLD
 
-        for row in range(NUM_PITCHES):
-            pitch = PITCH_MIN + row
+        # Loop over conceptual pitches
+        for pitch_index in range(NUM_PITCHES):
+            pitch = PITCH_MIN + pitch_index
+            row_start = pitch_index * PITCH_ROWS_PER_NOTE
+            row_end = row_start + PITCH_ROWS_PER_NOTE
+
+            # collapse multi-row pitch into a single on/off vector
+            pitch_on = np.any(win_on[row_start:row_end, :], axis=0)
+
             is_on = False
             start_step = 0
 
             for c in range(STEPS_PER_WINDOW):
-                on = bool(win_on[row, c])
+                on = bool(pitch_on[c])
                 if on and not is_on:
                     is_on = True
                     start_step = global_step_offset + c

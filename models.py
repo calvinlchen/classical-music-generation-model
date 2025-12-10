@@ -168,43 +168,46 @@ def generate_midi_tokens_with_transformer(
 
 # ----- IMAGE-RELATED DIFFUSION MODEL CLASSES AND METHODS -----
 
-def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
-                          lr=1e-4, gen_freq=50, weight_decay=1e-4,
-                          img_size=[88, 1024], device="cpu",
-                          save_dir="models/diffusion_checkpoints",
-                          save_checkpoints=True):
-    """
-    Train the diffusion model to predict noise.
+def train_diffusion_with_early_stopping(
+        model, train_loader, val_loader, timesteps, num_epochs=200, lr=1e-4,
+        gen_freq=10, patience=5, weight_decay=1e-4, device="cpu",
+        save_checkpoints=True, alpha_start=1.1, alpha_end=0.5,
+        save_dir="models/diffusion_checkpoints"):
 
-    Args:
-        model: SimpleUNet model
-        dataloader: DataLoader with training images
-        num_epochs: Total number of training epochs
-        lr: Learning rate
-        gen_freq: Generate sample image every N epochs
-
-    Returns:
-        losses: List of average loss per epoch
-    """
     os.makedirs(save_dir, exist_ok=True)
 
+    # Setup
     _, alphas = prepare_noise_schedule(device, timesteps=timesteps)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr,
-                                  weight_decay=weight_decay)
-    losses = []
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    train_losses = []
+    val_losses = []
+
+    best_val_loss = float('inf')
+    patience_counter = 0
 
     num_epoch_groups = ceil(num_epochs / gen_freq)
-    print(f"\nGenerating example every {gen_freq} epochs.")
-    print("="*70)
+    print(f"\nTraining for {num_epochs} epochs. "
+          f"Validation & checkpoint every {gen_freq} epochs.")
+    print(f"Early Stopping Patience: {patience} checks "
+          f"(≈{patience * gen_freq} epochs).")
+    print("=" * 70)
 
+    # Training Loop
     for epoch_group in range(num_epoch_groups):
         pbar = tqdm(range(gen_freq),
-                    desc=f"Group {epoch_group+1}/{num_epoch_groups}")
+                    desc=f"Block {epoch_group+1}/{num_epoch_groups}")
 
-        for epoch in pbar:
-            total_loss = 0
+        # --- TRAIN BLOCK ---
+        for epoch_in_group in pbar:
+            global_epoch = epoch_group * gen_freq + epoch_in_group
+            if global_epoch >= num_epochs:
+                break  # safety in case num_epochs not multiple of gen_freq
 
-            for batch in dataloader:
+            total_train_loss = 0.0
+
+            for batch in train_loader:
                 batch = batch.to(device)
                 batch_size = batch.size(0)
 
@@ -212,76 +215,95 @@ def train_diffusion_model(model, dataloader, timesteps, num_epochs=500,
                 noise = torch.randn_like(batch)
 
                 sqrt_alphas_t = torch.sqrt(alphas[t]).view(-1, 1, 1, 1)
-                sqrt_one_minus_alphas_t = torch.sqrt(
-                    1 - alphas[t]).view(-1, 1, 1, 1)
+                sqrt_one_minus_alphas_t = torch.sqrt(1 - alphas[t]).view(
+                    -1, 1, 1, 1)
                 x_t = sqrt_alphas_t * batch + sqrt_one_minus_alphas_t * noise
 
                 predicted_noise = model(x_t, t)
 
-                # CUSTOM LOSS FUNCTION found to be necessary
-                # batch ~ x_0 in [-1, 1]; note pixels are near +1
-                note_mask = (batch > -0.5).float()  # 1 where there was a note
-                alpha_start, alpha_end = 1.1, 0.5  # Note-on weight decays
-                progress = (epoch_group * gen_freq + epoch) / num_epochs
-                alpha = alpha_start + (alpha_end - alpha_start) * progress
-                weight = 1.0 + alpha * note_mask
+                # Custom weighted loss
+                note_mask = (batch > -0.5).float()
+                progress = global_epoch / num_epochs
+                alpha_weight = alpha_start + (
+                    alpha_end - alpha_start) * progress
+                weight = 1.0 + alpha_weight * note_mask
 
                 mse = (predicted_noise - noise) ** 2
                 loss = (weight * mse).mean()
-                # loss = F.mse_loss(predicted_noise, noise)
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-                total_loss += loss.item()
+                total_train_loss += loss.item()
 
-            avg_loss = total_loss / len(dataloader)
-            losses.append(avg_loss)
-            pbar.set_postfix({'loss': f'{avg_loss:.4f}'})
+            avg_train_loss = total_train_loss / len(train_loader)
+            train_losses.append(avg_train_loss)
+            pbar.set_postfix({'loss': f'{avg_train_loss:.4f}'})
 
-        # Generate and display sample image
-        print(f"\nEpoch {(epoch_group+1)*gen_freq}: Loss = {avg_loss:.4f}")
+        # If we exited because we hit num_epochs exactly,
+        # make sure global_epoch exists
+        if global_epoch >= num_epochs:
+            global_epoch = num_epochs - 1
 
-        num_samples = 8          # e.g. 2x4 grid
-        rows, cols = 2, 4
-        samples = [sample_image(model, alphas, device)
-                   for _ in range(num_samples)]
+        # --- VALIDATION & EARLY STOPPING BLOCK ---
+        current_val_loss = validate(
+            model, val_loader, alphas, timesteps, device)
+        val_losses.append(current_val_loss)
 
-        fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 2))
+        print(f"\nEpoch {global_epoch+1}: "
+              f"Train Loss={avg_train_loss:.4f}, "
+              f"Val Loss={current_val_loss:.4f}")
+
+        # Visualization
+        samples = [sample_image(model, alphas, device) for _ in range(4)]
+        fig, axes = plt.subplots(1, 4, figsize=(12, 3))
         for ax, img in zip(axes.flat, samples):
-            show_image_tensor(img, ax=ax)   # helper handles 1-channel rolls
-        # if fewer samples than slots, hide extra axes
-        for ax in axes.flat[num_samples:]:
-            ax.axis("off")
-
-        fig.suptitle(f"Generated at epoch {(epoch_group+1)*gen_freq}")
-        plt.tight_layout()
+            show_image_tensor(img, ax=ax)
         plt.show()
-        print()
 
+        # --- REGULAR CHECKPOINT (every gen_freq epochs) ---
         if save_checkpoints:
             ckpt_path = os.path.join(
-                save_dir, f"diffusion_epoch_{gen_freq*(epoch_group+1):04d}.pt")
+                save_dir, f"diffusion_epoch_{global_epoch+1:04d}.pt"
+            )
             torch.save(
                 {
-                    "epoch": epoch,
+                    "epoch": global_epoch + 1,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
-                    "loss": avg_loss,
+                    "train_loss": avg_train_loss,
+                    "val_loss": current_val_loss,
                 },
                 ckpt_path,
             )
             print(f"Saved checkpoint to {ckpt_path}")
 
-    print("="*70)
-    print("Training complete!")
+        # --- BEST-MODEL CHECKPOINT + EARLY STOPPING ---
+        if current_val_loss < best_val_loss:
+            best_val_loss = current_val_loss
+            patience_counter = 0  # Reset counter
 
-    return losses
+            # Save best model weights separately
+            if save_checkpoints:
+                best_path = os.path.join(save_dir, "best_model.pt")
+                torch.save(model.state_dict(), best_path)
+                print(f"New best model, saved to {best_path}")
+        else:
+            patience_counter += 1
+            print(f"No improvement. Patience: {patience_counter}/{patience}")
+
+        if patience_counter >= patience or global_epoch + 1 >= num_epochs:
+            print(f"\nStopping early -- validation loss hasn't improved for "
+                  f"{patience} checks or max epochs reached.")
+            break
+
+    print("=" * 70)
+    return train_losses, val_losses
 
 
 class SimpleUNet(nn.Module):
-    def __init__(self, channels=[32, 64, 128, 128], time_emb_dim=64):
+    def __init__(self, channels=[16, 32, 64, 64], time_emb_dim=64):
         super().__init__()
 
         # Time embedding (unchanged)
@@ -291,7 +313,7 @@ class SimpleUNet(nn.Module):
             nn.ReLU()
         )
 
-        # Initial conv: 1 input channel instead of 3
+        # Initial conv: 1 input channel
         self.conv_in = nn.Conv2d(1, channels[0], 3, padding=1)
 
         # Encoder (downsampling)
@@ -341,6 +363,35 @@ class SimpleUNet(nn.Module):
         x = self.up1(torch.cat([x, x0], dim=1), t_emb)
 
         return self.conv_out(x)  # [B, 1, 88, 1024]
+
+
+def validate(model, val_loader, alphas, timesteps, device):
+    """Computes validation loss (Pure MSE) to check for overfitting."""
+    model.eval()
+    total_val_loss = 0
+
+    with torch.no_grad():
+        for batch in val_loader:
+            batch = batch.to(device)
+            batch_size = batch.size(0)
+
+            # Same noise process as training
+            t = torch.randint(0, timesteps, (batch_size,), device=device)
+            noise = torch.randn_like(batch)
+
+            sqrt_alphas_t = torch.sqrt(alphas[t]).view(-1, 1, 1, 1)
+            sqrt_one_minus_alphas_t = torch.sqrt(1 - alphas[t]).view(
+                -1, 1, 1, 1)
+            x_t = sqrt_alphas_t * batch + sqrt_one_minus_alphas_t * noise
+
+            predicted_noise = model(x_t, t)
+
+            # Use standard MSE for validation to get a stable metric
+            loss = torch.nn.functional.mse_loss(predicted_noise, noise)
+            total_val_loss += loss.item()
+
+    model.train()  # Switch back to train mode
+    return total_val_loss / len(val_loader)
 
 
 @torch.no_grad()
