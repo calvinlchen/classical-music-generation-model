@@ -585,7 +585,7 @@ class ConditionedUNet(nn.Module):
 
         # 4. Pass combined embedding to blocks
         x0 = self.conv_in(x)
-        x1 = self.down1(F.max_pool2d(x, 2), global_emb)
+        x1 = self.down1(F.max_pool2d(x0, 2), global_emb)
         x2 = self.down2(F.max_pool2d(x1, 2), global_emb)
         x3 = self.down3(F.max_pool2d(x2, 2), global_emb)
 
