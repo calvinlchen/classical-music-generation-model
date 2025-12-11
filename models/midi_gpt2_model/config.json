@@ -29,5 +29,5 @@
   "summary_use_proj": true,
   "transformers_version": "4.57.3",
   "use_cache": true,
-  "vocab_size": 640
+  "vocab_size": 701
 }
