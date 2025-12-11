@@ -9,12 +9,14 @@ import util
 import os
 
 from transformers import (
+    GPT2LMHeadModel,
     get_linear_schedule_with_warmup
 )
 
 from model_helpers import SinusoidalPositionEmbedding, ResidualBlock
 from model_helpers import prepare_noise_schedule, show_image_tensor
 from model_helpers import get_batch, estimate_loss
+from text_processing import MidiTokenizer
 
 
 class MidiTextTransformer(nn.Module):
@@ -530,3 +532,44 @@ def train_gpt_2(model, train_loader, val_loader, num_epochs=5, lr=3e-4,
                 print("  -> saving best model")
                 os.makedirs(model_save_dir, exist_ok=True)
                 model.save_pretrained(model_save_dir)
+
+
+def generate_midi_tokens_with_gpt_model(
+        prompt_text: str,
+        vocab_file: str,
+        model_save_dir: str,
+        max_new_tokens: int = 1024,
+        temp: float = 0.5,
+        top_k: int = 50,
+        device: str | torch.device = None
+) -> str:
+
+    if device is None:
+        device = util.get_best_device()
+
+    tok = MidiTokenizer(vocab_file)
+    mdl = GPT2LMHeadModel.from_pretrained(model_save_dir).to(device)
+    mdl.eval()
+
+    prompt_ids = tok.encode(prompt_text, add_special_tokens=False)
+
+    # Build input: [BOS] + prompt tokens (no EOS)
+    input_ids = torch.tensor([[tok.bos_token_id] + prompt_ids],
+                             dtype=torch.long).to(device)
+    attention_mask = (input_ids != tok.pad_token_id).long()
+
+    with torch.no_grad():
+        output_ids = mdl.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=temp,
+            top_k=top_k,
+            pad_token_id=tok.pad_token_id,
+            eos_token_id=tok.eos_token_id,
+        )
+
+    generated_ids = output_ids[0].tolist()
+    generated_text = tok.decode(generated_ids, skip_special_tokens=True)
+    return generated_text
