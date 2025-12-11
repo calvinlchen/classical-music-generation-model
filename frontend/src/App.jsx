@@ -1,5 +1,3 @@
-// APP FRONTEND CODE created using CHATGPT
-
 import { useState, useEffect } from "react";
 import * as Tone from "tone";
 import { Midi } from "@tonejs/midi";
@@ -344,11 +342,6 @@ function DiffusionPage() {
           Conditional (Style)
         </label>
       </div>
-      {modelType === "gpt2" && (
-        <div style={{ marginTop: "-0.5rem", marginBottom: "0.75rem", color: exceedsGpt2Limit ? "#fca5a5" : "#a5b4fc", fontSize: "0.85rem" }}>
-          GPT-2 context: {promptTokenCount} prompt tokens + {maxNewTokensNumber} max new = {totalTokensForGPT2} / 1024
-        </div>
-      )}
 
       {/* --- Conditional Controls Area --- */}
       {mode === "conditional" && (
