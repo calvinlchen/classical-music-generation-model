@@ -584,7 +584,7 @@ function TransformerPage() {
   // We initialize the prompt using the first template in your PROMPTS list
   const [prompt, setPrompt] = useState(PROMPTS[0].text);
   const [selectedId, setSelectedId] = useState(PROMPTS[0].id);
-  const [modelType, setModelType] = useState("inhouse");
+  const [modelType, setModelType] = useState("gpt2");
 
   const [maxTokens, setMaxTokens] = useState(500);
   const [isLoading, setIsLoading] = useState(false);
