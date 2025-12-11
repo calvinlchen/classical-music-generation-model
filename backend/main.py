@@ -211,7 +211,7 @@ You are a music composer assistant. Your goal is to convert natural language des
 into a sequence of musical tokens that will be used to seed a music transformer.
 
 The valid tokens which the transformer model understands are in this format (examples):
-- NOTE_72, NOTE_20, etc. (MIDI note numbers)
+- NOTE_72, NOTE_20, etc. (MIDI note pitch values)
 - DUR_250, DUR_1, etc. (Note duration)
 - VEL_6, VEL_2, etc. (Note volume)
 - <SOS> (at the start of each sequence)
