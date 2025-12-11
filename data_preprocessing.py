@@ -1,16 +1,20 @@
+from collections import Counter
 from pathlib import Path
 from torch.utils.data import Dataset
 from midi_conversion import midi_to_text, midi_to_pianoroll_images
+import util
 import mido
 from PIL import Image
 import numpy as np
 import torch
+import os
+
 
 # Constants
 train_path = Path("data/train")
 val_path = Path("data/val")
 test_path = Path("data/test")
-    
+
 SEQ_SOS = "<SOS>"
 SEQ_EOS = "<EOS>"
 
@@ -22,7 +26,7 @@ def get_midis_by_composer(composer):
     Returns [[train midis], [val midis], [test midis]], where within each
     train/val/test midi list at each index is (midi, composer)
 
-    :param composer: either a single lowercase composer string 
+    :param composer: either a single lowercase composer string
                      or a list of lowercase composer strings
     """
     # Normalize to list
@@ -31,10 +35,12 @@ def get_midis_by_composer(composer):
     elif isinstance(composer, (list, tuple, set)):
         composers = [c.lower() for c in composer]
     else:
-        raise ValueError("composer must be a string or list/tuple/set of strings")
-    
+        raise ValueError(
+            "composer must be a string or list/tuple/set of strings")
+
     paths = [train_path, val_path, test_path]
-    # Index 0 contains train midis, 1 contains val midis, 2 contains test midis.
+    # Index 0 contains train midis, 1 contains val midis,
+    # 2 contains test midis.
     train_val_test_midis = [[], [], []]
     total_midis = 0
 
@@ -48,18 +54,90 @@ def get_midis_by_composer(composer):
                         midi_obj = mido.MidiFile(midi_file)
                         train_val_test_midis[i].append((midi_obj, c))
                     except Exception as e:
-                        print(f"Could not load {midi_file}: {e}")    
+                        print(f"Could not load {midi_file}: {e}")
         total_midis += len(train_val_test_midis[i])        
         print(f"Loaded {len(train_val_test_midis[i])} MIDI files from {path}")
 
     print(f"{total_midis} MIDI files retrieved.")
     return train_val_test_midis
 
-def process_midis_to_text(midis):
+
+def midi_split_to_text_split(
+        midis: list[list[tuple[mido.MidiFile, str]]],
+        save_to_directory: str = None,
+        splits: list[str] = ["train", "val", "test"],
+        verbose: bool = True
+) -> list[list[str]]:
+    """
+    :param midis: lists within a larger list; each list
+        contains (MIDI file, composer) tuples for the respective section.
+        The sections are "train", "val", and "test" by default.
+    :param save_to_directory: Leave as None to not save the output as .txt
+        files. Otherwise, saves text files to section subfolders of the given
+        path, with section names matching the terms of param splits.
+    :param splits: defines the # and labels of sections.
+    :type midis: list[ list[ tuple[mido.MidiFile, str] ] ]
+    :type save_to_directory: str
+    :return: list[ list[train texts], list[val texts], list[test texts] ]
+    :rtype: list[list[str]]
+    """
+    text_list = []
+
+    for i in range(max(len(midis), len(splits))):
+        text_list.append([])
+
+    for i in range(len(midis)):
+        text_list[i] = process_midis_to_text(midis[i])
+
+    if save_to_directory is not None:
+
+        # If not enough split names defined in param 'splits'
+        if len(splits) < len(midis):
+            print(f"Error: could not save, since splits param defines \
+                  [{len(splits)}] split names, while midis param list has \
+                  [{len(midis)}] splits.")
+            return text_list
+
+        util.mkdir(save_to_directory)
+
+        for split_idx, split_name in enumerate(splits):
+            split_dir = util.path_join(save_to_directory, split_name)
+            util.mkdir(split_dir)
+
+            for i, text in enumerate(text_list[split_idx]):
+                util.write_txt_file(
+                    split_dir, f"{split_name}_{i:04d}.txt", text)
+
+            if verbose:
+                print(f"Saved {len(text_list[split_idx])} files to \
+                      {split_dir}")
+
+    return text_list
+
+
+def build_vocab_from_dir(data_dir):
+    counter = Counter()
+    for split in ["train", "val"]:
+        split_dir = os.path.join(data_dir, split)
+        if not os.path.isdir(split_dir):
+            continue
+        for root, _, files in os.walk(split_dir):
+            for fname in files:
+                if not fname.endswith(".txt"):
+                    continue
+                path = os.path.join(root, fname)
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        tokens = line.strip().split()
+                        counter.update(tokens)
+    return counter
+
+
+def process_midis_to_text(midis: list[tuple[mido.MidiFile, str]]):
     """
     Process a series of MIDI files into text by calling the
     midi_to_text method from midi_conversion.py
-    
+
     :param midis: List of midis in (mido object, composer) format to convert
     """
     texts = []

@@ -434,3 +434,8 @@ def sample_image(model, alphas, device, img_size=[88, 1024]):
             x = pred_x0
 
     return x  # [1, 88, 1024]
+
+
+# ----- PRETRAINED GPT-2 TRANSFORMER MODEL CLASSES AND METHODS -----
+
+
