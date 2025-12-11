@@ -344,6 +344,11 @@ function DiffusionPage() {
           Conditional (Style)
         </label>
       </div>
+      {modelType === "gpt2" && (
+        <div style={{ marginTop: "-0.5rem", marginBottom: "0.75rem", color: exceedsGpt2Limit ? "#fca5a5" : "#a5b4fc", fontSize: "0.85rem" }}>
+          GPT-2 context: {promptTokenCount} prompt tokens + {maxNewTokensNumber} max new = {totalTokensForGPT2} / 1024
+        </div>
+      )}
 
       {/* --- Conditional Controls Area --- */}
       {mode === "conditional" && (
@@ -579,6 +584,7 @@ function TransformerPage() {
   // We initialize the prompt using the first template in your PROMPTS list
   const [prompt, setPrompt] = useState(PROMPTS[0].text);
   const [selectedId, setSelectedId] = useState(PROMPTS[0].id);
+  const [modelType, setModelType] = useState("inhouse");
 
   const [maxTokens, setMaxTokens] = useState(500);
   const [isLoading, setIsLoading] = useState(false);
@@ -590,6 +596,12 @@ function TransformerPage() {
   const [aiDescription, setAiDescription] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiDraft, setAiDraft] = useState(null);
+
+  const promptTokenCount = prompt.trim() ? prompt.trim().split(/\s+/).length : 0;
+  const maxNewTokensNumber = Number(maxTokens) || 500;
+  const totalTokensForGPT2 = promptTokenCount + maxNewTokensNumber;
+  const gpt2TokensRemaining = 1024 - promptTokenCount;
+  const exceedsGpt2Limit = modelType === "gpt2" && totalTokensForGPT2 > 1024;
 
   const { isPlaying, progress, duration, play, stop, seek } = useMidiPlayer(midiObj);
 
@@ -637,16 +649,32 @@ function TransformerPage() {
   };
 
   const handleGenerate = async () => {
+    const tokensForRequest = maxNewTokensNumber;
+
+    if (modelType === "gpt2" && exceedsGpt2Limit) {
+      const allowed = Math.max(1024 - promptTokenCount, 0);
+      setStatus(
+        `GPT-2 limit exceeded: prompt has ${promptTokenCount} tokens. ` +
+        `Reduce max new tokens to ${allowed} or shorten the prompt.`
+      );
+      return;
+    }
+
     try {
       setIsLoading(true);
-      setStatus("Generating music from tokens...");
+      setStatus(
+        modelType === "gpt2"
+          ? "Generating with GPT-2 tuned model..."
+          : "Generating music from tokens..."
+      );
 
       const res = await fetch(`${BACKEND_URL}/generate-midi-from-transformer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           start_text: prompt,
-          max_new_tokens: Number(maxTokens) || 500,
+          max_new_tokens: tokensForRequest,
+          model_type: modelType,
         }),
       });
 
@@ -680,6 +708,41 @@ function TransformerPage() {
       <p style={{ marginBottom: "1.5rem", color: "#9ca3af" }}>
         Generate MIDI tokens with the text transformer. Use the AI assistant, or pick a starting template below.
       </p>
+
+      {/* --- MODEL SELECT --- */}
+      <div style={{
+        display: "grid",
+        gap: "0.35rem",
+        background: "rgba(15,23,42,0.7)",
+        border: "1px solid rgba(148,163,184,0.3)",
+        borderRadius: "0.75rem",
+        padding: "0.75rem",
+        marginBottom: "1.25rem"
+      }}>
+        <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#e5e7eb" }}>
+          Choose model
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#cbd5e1", cursor: "pointer" }}>
+          <input
+            type="radio"
+            name="modelType"
+            value="inhouse"
+            checked={modelType === "inhouse"}
+            onChange={() => setModelType("inhouse")}
+          />
+          In-house transformer (no token limit)
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#cbd5e1", cursor: "pointer" }}>
+          <input
+            type="radio"
+            name="modelType"
+            value="gpt2"
+            checked={modelType === "gpt2"}
+            onChange={() => setModelType("gpt2")}
+          />
+          GPT-2 tuned (1024-token context window)
+        </label>
+      </div>
 
       {/* --- AI ASSISTANT SECTION --- */}
       <div style={{
@@ -812,10 +875,10 @@ function TransformerPage() {
           Max new tokens:&nbsp;
           <input
             type="number"
-            min={10}
-            max={2048}
+            min={modelType === "gpt2" ? 0 : 10}
+            max={modelType === "gpt2" ? Math.max(gpt2TokensRemaining, 0) : 2048}
             value={maxTokens}
-            onChange={(e) => setMaxTokens(e.target.value)}
+            onChange={(e) => setMaxTokens(Number(e.target.value))}
             style={{
               width: "90px",
               borderRadius: "0.5rem",

@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 import sys
 from pathlib import Path
+from transformers import GPT2LMHeadModel
 
 ROOT_DIR = Path(__file__).resolve().parent.parent  # already implicitly used
 TEXT_DIR = ROOT_DIR / "data" / "example_midi_texts"
@@ -34,6 +35,7 @@ from models import (
 )
 from model_helpers import prepare_noise_schedule
 from midi_conversion import pianoroll_images_to_midi, text_to_midi
+from text_processing import MidiTokenizer
 
 app = FastAPI()
 
@@ -73,6 +75,31 @@ KEY_MAP = {
     "Am": 19, "Bb": 20, "Bbm": 21, "B": 22, "Bm": 23, "Unknown": 24,
     "null": 25  # NULL token
 }
+
+GPT2_MODEL_DIR = ROOT_DIR / "models" / "midi_gpt2_model"
+GPT2_VOCAB_PATH = ROOT_DIR / "data" / "midi_text_exports" / "midi_vocab.txt"
+GPT2_MAX_CONTEXT_TOKENS = 1024
+
+# Lazy globals for GPT-2 tuned model
+gpt2_tokenizer: MidiTokenizer | None = None
+gpt2_model: GPT2LMHeadModel | None = None
+
+try:
+    if GPT2_MODEL_DIR.exists() and GPT2_VOCAB_PATH.exists():
+        gpt2_tokenizer = MidiTokenizer(str(GPT2_VOCAB_PATH))
+        gpt2_model = GPT2LMHeadModel.from_pretrained(
+            str(GPT2_MODEL_DIR)
+        ).to(DEVICE)
+        gpt2_model.eval()
+        print("GPT-2 tuned model loaded successfully.")
+    else:
+        print(
+            "GPT-2 tuned model files not found; GPT-2 mode will be disabled."
+        )
+except Exception as e:
+    print(f"Error loading GPT-2 tuned model: {e}")
+    gpt2_model = None
+    gpt2_tokenizer = None
 
 # Load trained diffusion model checkpoints once at startup
 UNCOND_DIFF_MODEL_PATH = "../models/diffusion_unconditional_20000/\
@@ -204,6 +231,47 @@ def generate_midi_bytes_from_text(start_text, max_new_tokens=500):
     return buf.getvalue()
 
 
+def generate_midi_bytes_from_gpt2(
+    prompt_text: str,
+    max_new_tokens: int = 500,
+    temperature: float = 0.8,
+    top_k: int = 50,
+):
+    if gpt2_model is None or gpt2_tokenizer is None:
+        raise RuntimeError("GPT-2 tuned model is not available on the server.")
+
+    prompt_ids = gpt2_tokenizer.encode(
+        prompt_text, add_special_tokens=False)
+    input_ids = torch.tensor(
+        [[gpt2_tokenizer.bos_token_id] + prompt_ids],
+        dtype=torch.long
+    ).to(DEVICE)
+    attention_mask = (input_ids != gpt2_tokenizer.pad_token_id).long()
+
+    gpt2_model.eval()
+    with torch.no_grad():
+        output_ids = gpt2_model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=temperature,
+            top_k=top_k,
+            pad_token_id=gpt2_tokenizer.pad_token_id,
+            eos_token_id=gpt2_tokenizer.eos_token_id,
+        )
+
+    generated_ids = output_ids[0].tolist()
+    generated_text = gpt2_tokenizer.decode(
+        generated_ids, skip_special_tokens=True)
+
+    midi_file = text_to_midi(generated_text)
+    buf = io.BytesIO()
+    midi_file.save(file=buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 # Helper method
 def convert_pianoroll_sample_to_bytes(sample):
 
@@ -270,26 +338,85 @@ def generate_midi_conditional(req: ConditionalDiffusionRequest):
 @app.post("/generate-midi-from-transformer")
 def generate_midi_from_transformer(
     payload: dict = Body(
-        default={"start_text": "<SOS>", "max_new_tokens": 500}
+        default={
+            "start_text": "<SOS>",
+            "max_new_tokens": 500,
+            "model_type": "inhouse"
+        }
     )
 ):
     """
     Request body (JSON):
     {
       "start_text": "COMPOSER_mozart KEY_D ...",   # optional
-      "max_new_tokens": 500                        # optional
+      "max_new_tokens": 500,                       # optional
+      "model_type": "inhouse" | "gpt2"             # optional
     }
     """
     start_text = payload.get("start_text", "<SOS>")
     max_new_tokens = int(payload.get("max_new_tokens", 500))
+    model_type = payload.get("model_type", "inhouse")
+    temperature = float(payload.get("temperature", 0.8))
+    top_k = int(payload.get("top_k", 50))
 
-    midi_bytes = generate_midi_bytes_from_text(start_text, max_new_tokens)
+    if model_type not in {"inhouse", "gpt2"}:
+        return JSONResponse(
+            {"error": "Invalid model_type. Use 'inhouse' or 'gpt2'."},
+            status_code=400
+        )
+
+    try:
+        if model_type == "gpt2":
+            if gpt2_model is None or gpt2_tokenizer is None:
+                return JSONResponse(
+                    {
+                        "error": (
+                            "GPT-2 tuned model is not available on the server."
+                        )
+                    },
+                    status_code=503,
+                )
+
+            prompt_tokens = gpt2_tokenizer.encode(
+                start_text, add_special_tokens=False)
+            total_tokens = len(prompt_tokens) + max_new_tokens
+            if total_tokens > GPT2_MAX_CONTEXT_TOKENS:
+                allowed = max(GPT2_MAX_CONTEXT_TOKENS - len(prompt_tokens), 0)
+                return JSONResponse(
+                    {
+                        "error": (
+                            "Token limit exceeded for GPT-2 tuned model: "
+                            f"{len(prompt_tokens)} prompt tokens + "
+                            f"{max_new_tokens} max_new_tokens > "
+                            f"{GPT2_MAX_CONTEXT_TOKENS}. "
+                            "Reduce max_new_tokens or shorten the prompt."
+                        ),
+                        "max_new_tokens_allowed": allowed,
+                    },
+                    status_code=400,
+                )
+
+            midi_bytes = generate_midi_bytes_from_gpt2(
+                start_text,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_k=top_k,
+            )
+            filename = "gpt2_transformer_sample.mid"
+        else:
+            midi_bytes = generate_midi_bytes_from_text(
+                start_text, max_new_tokens)
+            filename = "transformer_sample.mid"
+    except Exception as e:
+        print(f"Error generating transformer MIDI: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
     midi_b64 = base64.b64encode(midi_bytes).decode("ascii")
 
     return JSONResponse(
         {
             "midi_base64": midi_b64,
-            "filename": "transformer_sample.mid",
+            "filename": filename,
         }
     )
 
