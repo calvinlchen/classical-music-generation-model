@@ -253,7 +253,14 @@ function DiffusionPage() {
         body: body
       });
 
-      if (!res.ok) throw new Error(`Backend error 1: ${res.status}`);
+      if (!res.ok) {
+        let extra = "";
+        try {
+          const text = await res.text();
+          extra = ` – ${text}`;
+        } catch (_) {}
+        throw new Error(`Backend error: ${res.status}${extra}`);
+      }
 
       const data = await res.json();
 
@@ -631,7 +638,14 @@ function TransformerPage() {
         body: JSON.stringify({ user_prompt: aiDescription }),
       });
 
-      if (!res.ok) throw new Error(`Backend error 2: ${res.status}`);
+      if (!res.ok) {
+        let extra = "";
+        try {
+          const text = await res.text();
+          extra = ` – ${text}`;
+        } catch (_) {}
+        throw new Error(`Backend error: ${res.status}${extra}`);
+      }
       const data = await res.json();
       setAiDraft(data.seed_text); 
     } catch (err) {
@@ -673,7 +687,14 @@ function TransformerPage() {
         }),
       });
 
-      if (!res.ok) throw new Error(`Backend error 3: ${res.status}`);
+      if (!res.ok) {
+        let extra = "";
+        try {
+          const text = await res.text();
+          extra = ` – ${text}`;
+        } catch (_) {}
+        throw new Error(`Backend error: ${res.status}${extra}`);
+      }
       const data = await res.json();
 
       const midiBytes = base64ToUint8Array(data.midi_base64);
