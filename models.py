@@ -445,7 +445,21 @@ def sample_image(model, alphas, device, img_size=[88, 1024]):
 
 def train_gpt_2(model, train_loader, val_loader, num_epochs=5, lr=3e-4,
                 weight_decay=0.01, device: str | torch.device = None,
-                model_save_dir: str = None):
+                model_save_dir: str | None = None):
+    """
+    Train GPT-2.
+
+    Args:
+        model: GPT2LMHeadModel
+        train_loader: DataLoader for training data
+        val_loader: DataLoader for validation data
+        num_epochs: maximum number of epochs
+        lr: learning rate
+        weight_decay: weight decay for AdamW
+        device: torch.device or string; if None, uses util.get_best_device()
+        model_save_dir: if not None, best model is saved in this directory with
+                        .save_pretrained()
+    """
     if device is None:
         device = util.get_best_device()
 
