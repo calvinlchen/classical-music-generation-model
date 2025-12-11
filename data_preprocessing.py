@@ -115,24 +115,6 @@ def midi_split_to_text_split(
     return text_list
 
 
-def build_vocab_from_dir(data_dir):
-    counter = Counter()
-    for split in ["train", "val"]:
-        split_dir = os.path.join(data_dir, split)
-        if not os.path.isdir(split_dir):
-            continue
-        for root, _, files in os.walk(split_dir):
-            for fname in files:
-                if not fname.endswith(".txt"):
-                    continue
-                path = os.path.join(root, fname)
-                with open(path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        tokens = line.strip().split()
-                        counter.update(tokens)
-    return counter
-
-
 def process_midis_to_text(midis: list[tuple[mido.MidiFile, str]]):
     """
     Process a series of MIDI files into text by calling the

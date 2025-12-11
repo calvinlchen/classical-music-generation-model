@@ -143,3 +143,17 @@ def show_image_tensor(tensor, ax=None, title=None):
         ax.axis('off')
         if title:
             ax.set_title(title)
+
+
+def collate_fn(batch, pad_token_id: int):
+    input_ids = torch.stack([b["input_ids"] for b in batch], dim=0)
+    labels = torch.stack([b["labels"] for b in batch], dim=0)
+
+    attention_mask = (input_ids != pad_token_id).long()
+    labels[input_ids == pad_token_id] = -100  # ignore pads in loss
+
+    return {
+        "input_ids": input_ids,
+        "labels": labels,
+        "attention_mask": attention_mask,
+    }
