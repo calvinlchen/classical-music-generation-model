@@ -447,7 +447,9 @@ def sample_image(model, alphas, device, img_size=[88, 1024]):
 
 def train_gpt_2(model, train_loader, val_loader, num_epochs=5, lr=3e-4,
                 weight_decay=0.01, device: str | torch.device = None,
-                model_save_dir: str | None = None):
+                model_save_dir: str | None = None,
+                early_stopping_patience: int | None = 3,
+                min_delta: float = 0.0, verbose: bool = True):
     """
     Train GPT-2.
 
@@ -461,6 +463,11 @@ def train_gpt_2(model, train_loader, val_loader, num_epochs=5, lr=3e-4,
         device: torch.device or string; if None, uses util.get_best_device()
         model_save_dir: if not None, best model is saved in this directory with
                         .save_pretrained()
+        early_stopping_patience: number of epochs with no val-loss improvement
+                                 before stopping early. If None, disables
+                                 early stopping.
+        min_delta: minimum improvement in val loss to be considered "better"
+                   (i.e., new_loss < best_loss - min_delta)
     """
     if device is None:
         device = util.get_best_device()
@@ -474,6 +481,11 @@ def train_gpt_2(model, train_loader, val_loader, num_epochs=5, lr=3e-4,
     )
 
     best_val_loss = float("inf")
+    best_epoch = -1
+    epochs_without_improvement = 0
+
+    train_losses = []
+    val_losses = []
 
     for epoch in range(num_epochs):
         model.train()
@@ -505,10 +517,12 @@ def train_gpt_2(model, train_loader, val_loader, num_epochs=5, lr=3e-4,
             pbar.set_postfix({"batch_loss": f"{loss.item():.4f}"})
 
         avg_train_loss = total_train_loss / len(train_loader)
+        train_losses.append(avg_train_loss)
 
         # Validation
         model.eval()
         total_val_loss = 0.0
+
         with torch.no_grad():
             for batch in val_loader:
                 input_ids = batch["input_ids"].to(device)
@@ -523,15 +537,51 @@ def train_gpt_2(model, train_loader, val_loader, num_epochs=5, lr=3e-4,
                 total_val_loss += outputs.loss.item()
 
         avg_val_loss = total_val_loss / len(val_loader)
+        val_losses.append(avg_val_loss)
         print(f"Epoch {epoch+1}/{num_epochs} | train loss: \
               {avg_train_loss:.4f} | val loss: {avg_val_loss:.4f}")
 
-        if model_save_dir is not None:
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
+        # Check for improvement
+        if avg_val_loss < best_val_loss - min_delta:
+            best_val_loss = avg_val_loss
+            best_epoch = epoch
+            epochs_without_improvement = 0
+
+            if model_save_dir is not None:
                 print("  -> saving best model")
                 os.makedirs(model_save_dir, exist_ok=True)
                 model.save_pretrained(model_save_dir)
+        else:
+            epochs_without_improvement += 1
+            if verbose:
+                print(
+                    f"No improvement in val loss "
+                    f"for {epochs_without_improvement} epoch(s)."
+                )
+
+            if (
+                early_stopping_patience is not None
+                and epochs_without_improvement >= early_stopping_patience
+            ):
+                print(
+                    f"Early stopping triggered: "
+                    f"no val-loss improvement for {early_stopping_patience} \
+                        epochs."
+                )
+                break
+
+    print(
+        f"Training complete. Best val loss: {best_val_loss:.4f} "
+        f"at epoch {best_epoch + 1}."
+    )
+
+    # Handling of these values is optional.
+    return {
+        "train_losses": train_losses,
+        "val_losses": val_losses,
+        "best_val_loss": best_val_loss,
+        "best_epoch": best_epoch,
+    }
 
 
 def generate_midi_tokens_with_gpt_model(
