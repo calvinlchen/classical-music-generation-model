@@ -1,59 +1,33 @@
 # Classical Music Generation Model
 
-## What It Does
+## Project Purpose and Motivation
+This project explores whether accessible machine learning methods can generate coherent classical-style music. We focus on classical-era composers (roughly 1725–1800 A.D.), training on Haydn, Mozart, and Beethoven to keep a consistent tonal style. The browser app lets musicians, students, and hobbyists experiment with these models to generate MIDIs without deep technical or music-theory expertise.
 
-What our project does is that we generated new classical-style piano music using a Transformer model and a Diffusion Model. We trained both models on a Mozart and Haydn MIDI dataset which is part of the dataset we found from Hugging Face (https://huggingface.co/datasets/drengskapur/midi-classical-music) which allowed our models to learn musical patterns directly from real compsitions. Our Transformer model generates music as sequences of musical tokens while our Diffusion model produces piano roll images to represent the generated music visually. We have built a web app where users can generate music, listen to them directly in the browser, can view the generated piano roll images, and are able to download the resulting MIDI files. With the Transformer portion of our web app, we also included an integration with OpenAI's ChatGPT Mini so that users can describe the type of misc they want to generate such as if the user wants to generate a sad song, a slow song, or an energetic song for example. Our main goal of this project is to create an accessible AI tool that can create coherent and expressive classical music in a way that is easy for anyone to use. With this goal in mind, we want our AI tool to help musicians, students, and musical hobbyists to experiment with music generation without requiring an technical or musical expertise.
+## What It Does
+Two complementary generators power the app: a transformer that produces musical token sequences, and a diffusion model that synthesizes piano-roll images. Both outputs are converted to MIDI for playback. Users can generate pieces, preview them in-browser, view the piano-roll image, download the MIDI, and optionally draft prompts with an OpenAI-assisted helper.
+
+Within each model type exist two implementations: for transformers, an in-house model and a tuned version of OpenAI GPT-2; for diffusion, an unconditional model and a conditional model trained with classifier-free guidance. Each of these have their strengths and weaknesses, allowing the user to choose a model which best suits their music generation goals.
 
 ## Quick Start
-
-Follwing these steps to run the project after completing the installation instructions in the SETUP.md file (We went over how to run the Web App there as well).
-
-### Starting the Backend Server
-
-To run the backend, make sure that your Python virtual enviornment is activated using these commands on the terminal:
-
+1) Backend (Python 3.11+, virtual environment activated):
 ```
 cd backend
 uvicorn main:app --reload --port 8000
 ```
-
-### Starting the Frontend Web App
-
-Ensure that you have Node.js installed globally on your device (https://nodejs.org/en/download).
-
-In a separate terminal window which is outside the Python virtual environment, run these commands:
+2) Frontend (Node.js 18+):
 ```
 cd frontend
-npm install (If you have not installed Node.js before)
+npm install
 npm run dev
 ```
+Then open http://localhost:5173 in your browser.
+3) Optional: enable the OpenAI prompt helper by adding `OPENAI_API_KEY=<your key>` to `backend/.env`.
 
-If run sucessfully, you should see:
-
-```
-Local http://localhost:5173
-You should open that link in your browser to take you to the web app.
-```
-
-### Using the OPENAI API Feature
-
-If yopu want to use the text-prompt interface of our web app, you do need to add your own OpenAI API key.
-
-In the backend folder, create the ```.env``` file.
-
-Inside the ```.env``` file, type:
-
-```
-OPENAI_API_KEY = [your own key]
-```
-
-This enables the AI-assisted music generation feature. If you do not have an OpenAI API key, you can still be able to generate music, can view piano roll images, and the rest of the app should still work, it is just that the OpenAI text-prompt feature will be disabled.
+See `SETUP.md` for full installation details, CUDA notes, and troubleshooting.
 
 ## Video Links
-
-Demo Video:
-
-Technical Walkthrough Video:
+- Demo Video:
+- Technical Walkthrough Video:
 
 ## Evaluation
 

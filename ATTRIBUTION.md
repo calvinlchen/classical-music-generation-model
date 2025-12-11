@@ -5,18 +5,17 @@ Our model were trained by using the public avaliable MIDI Classical Music datase
 ## Third-Party Libraries and Frameworks
 
 ### Backend
-FastAPI, Uvicorn, PyTorch, mido, Pillow, NumPy, OpenAI API, can see the ```backend/requirements.txt``` to look at the specific versions
+- FastAPI, Uvicorn, PyTorch, mido, Pillow, NumPy, OpenAI API  
+- See `backend/requirements.txt` for exact versions.
 
 ### Frontend
-React and Node.js to run the dev environment
+- React, Vite, Tone.js, @tonejs/midi, and supporting Node.js tooling  
+- See `frontend/package.json` for exact versions.
 
 ## AI Assistance
 
-We utilized AI tools, mainly OpenAI's ChatGPT 5.1 and Google Gemini, in December 2025.
-
-### How These AI Tools Were Used
-
-- To debug errors in our Diffusion and Transformer training notebooks
-- Suggest areas of improvement in model design and tuning
-- Helped improve our code structure and readability
-- Assisted with web app coding and deployment for the frontend and backend
+We used OpenAI's ChatGPT 5.1 and Google Gemini in December 2025 to:
+- Debug diffusion and transformer training notebooks and Python files.
+- Suggest improvements to model design and tuning.
+- Improve code structure and readability.
+- Assist with frontend/backend app code and deployment tasks.
