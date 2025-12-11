@@ -6,7 +6,7 @@ This project explores whether accessible machine learning methods can generate c
 ## What It Does
 Two complementary generators power the app: a transformer that produces musical token sequences, and a diffusion model that synthesizes piano-roll images. Both outputs are converted to MIDI for playback. Users can generate pieces, preview them in-browser, view the piano-roll image, download the MIDI, and optionally draft prompts with an OpenAI-assisted helper.
 
-Within each model type exist two implementations: for transformers, an in-house model and a tuned version of OpenAI GPT-2; for diffusion, an unconditional model and a conditional model trained with classifier-free guidance. Each of these have their strengths and weaknesses, allowing the user to choose a model which best suits their music generation goals.
+Within each model type exist two implementations: for transformers, an in-house model and a tuned version of OpenAI GPT-2; for diffusion, an unconditional model and a conditional model trained with classifier-free guidance. Each of these have their strengths and weaknesses, allowing the user to choose a model which best suits their music generation goals. For instance, GPT-2 achieves the best musical results of all the models but is limited in its context window to 1,024 tokens, while our custom in-house model can produce an endless context window but procures more inconsistent results.
 
 ## Quick Start
 1) Backend (Python 3.11+, virtual environment activated):
@@ -85,16 +85,18 @@ Our training results:
 
 | Epoch | Training Loss | Validation Loss |
 |---|---|---|
-| 0 | 5.663 | 0.075 |
-| 500 | 1.514 | 0.577 |
-| 1000 | 1.329 | 0.619 |
-| 1500 | 1.246 | 0.645 |
-| 2000 | 1.206 | 0.653 |
-| 2500 | 1.136 | 0.672 |
-| 3000 | 1.075 | 0.684 |
-| 3500 | 1.074 | 0.687 |
-| 4000 | 1.087 | 0.689 |
-| 4500 | 1.047 | 0.698 |
+| 20 | 0.0779 | 0.0772 |
+| 40 | 0.0476 | 0.0405 |
+| 60 | 0.0357 | 0.0342 |
+| 80 | 0.0290 | 0.0302 |
+| 100 | 0.0254 | 0.0251 |
+| 120 | 0.0215 | 0.0207 |
+| 140 | 0.0201 | 0.0186 |
+| 160 | 0.0190 | 0.0213 |
+| 180 | 0.0165 | 0.0164 |
+| 200 | 0.0154 | 0.0153 |
+
+The 200-epoch model is saved as "best_model.pt" in models\diffusion_unconditional_1200\.
 
 ## Individual Contributions
 
