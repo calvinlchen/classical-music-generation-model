@@ -418,7 +418,28 @@ def train_cfg_diffusion_with_early_stopping(
               f"Val Loss={current_val_loss:.4f}")
 
         # Visualization
-        samples = [sample_image(model, alphas, device) for _ in range(4)]
+        # We generate 4 samples. Let's use fixed conditions (e.g., Composer 0)
+        # to see how the model evolves on the same prompt over time.
+
+        test_c = 0    # Composer index 0
+        test_k = 0    # Key index 0
+        test_t = 0.5  # Mid-range tempo
+
+        samples = []
+        for _ in range(4):
+            s = sample_image_guided(
+                model=model,
+                alphas=alphas,
+                device=device,
+                composer_idx=test_c,
+                key_idx=test_k,
+                tempo_val=test_t,
+                num_composers=num_composers,
+                num_keys=num_keys,
+                guidance_scale=3.0  # Strength of the condition
+            )
+            samples.append(s)
+
         fig, axes = plt.subplots(1, 4, figsize=(12, 3))
         for ax, img in zip(axes.flat, samples):
             show_image_tensor(img, ax=ax)
@@ -764,7 +785,9 @@ def sample_image_guided(model, alphas, device,
         else:
             x = pred_x0
 
-    return x
+    # return x
+    # x is [1, 1, H, W] -> squeeze batch dim -> [1, H, W]
+    return x.squeeze(0)
 
 
 # ----- PRETRAINED GPT-2 TRANSFORMER MODEL CLASSES AND METHODS -----
