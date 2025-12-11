@@ -253,7 +253,14 @@ function DiffusionPage() {
         body: body
       });
 
-      if (!res.ok) throw new Error(`Backend error: ${res.status}`);
+      if (!res.ok) {
+        let extra = "";
+        try {
+          const text = await res.text();
+          extra = ` – ${text}`;
+        } catch (_) {}
+        throw new Error(`Backend error: ${res.status}${extra}`);
+      }
 
       const data = await res.json();
 
@@ -577,7 +584,7 @@ function TransformerPage() {
   // We initialize the prompt using the first template in your PROMPTS list
   const [prompt, setPrompt] = useState(PROMPTS[0].text);
   const [selectedId, setSelectedId] = useState(PROMPTS[0].id);
-  const [modelType, setModelType] = useState("inhouse");
+  const [modelType, setModelType] = useState("gpt2");
 
   const [maxTokens, setMaxTokens] = useState(500);
   const [isLoading, setIsLoading] = useState(false);
@@ -631,7 +638,14 @@ function TransformerPage() {
         body: JSON.stringify({ user_prompt: aiDescription }),
       });
 
-      if (!res.ok) throw new Error(`Backend error: ${res.status}`);
+      if (!res.ok) {
+        let extra = "";
+        try {
+          const text = await res.text();
+          extra = ` – ${text}`;
+        } catch (_) {}
+        throw new Error(`Backend error: ${res.status}${extra}`);
+      }
       const data = await res.json();
       setAiDraft(data.seed_text); 
     } catch (err) {
@@ -673,7 +687,14 @@ function TransformerPage() {
         }),
       });
 
-      if (!res.ok) throw new Error(`Backend error: ${res.status}`);
+      if (!res.ok) {
+        let extra = "";
+        try {
+          const text = await res.text();
+          extra = ` – ${text}`;
+        } catch (_) {}
+        throw new Error(`Backend error: ${res.status}${extra}`);
+      }
       const data = await res.json();
 
       const midiBytes = base64ToUint8Array(data.midi_base64);
@@ -722,21 +743,21 @@ function TransformerPage() {
           <input
             type="radio"
             name="modelType"
-            value="inhouse"
-            checked={modelType === "inhouse"}
-            onChange={() => setModelType("inhouse")}
-          />
-          In-house transformer (no token limit)
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#cbd5e1", cursor: "pointer" }}>
-          <input
-            type="radio"
-            name="modelType"
             value="gpt2"
             checked={modelType === "gpt2"}
             onChange={() => setModelType("gpt2")}
           />
           GPT-2 tuned (1024-token context window)
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#cbd5e1", cursor: "pointer" }}>
+          <input
+            type="radio"
+            name="modelType"
+            value="inhouse"
+            checked={modelType === "inhouse"}
+            onChange={() => setModelType("inhouse")}
+          />
+          In-house transformer (no token limit)
         </label>
       </div>
 
