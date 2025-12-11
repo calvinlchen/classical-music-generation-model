@@ -1,6 +1,10 @@
 from pathlib import Path
 from torch.utils.data import Dataset
-from midi_conversion import midi_to_text, midi_to_pianoroll_images
+from midi_conversion import (
+    midi_to_text,
+    midi_to_pianoroll_images,
+    extract_notes_and_meta
+)
 import util
 import mido
 from PIL import Image
@@ -133,12 +137,12 @@ def process_midis_to_text(midis: list[tuple[mido.MidiFile, str]]):
     return texts
 
 
-def process_midis_to_images(midis):
+def process_midis_to_images(midis: list[mido.MidiFile]):
     """
     Process a series of MIDI files into images by calling the
     midi_to_pianoroll_images method from midi_conversion.py
 
-    :param midis: List of individual mido.MidiObject objects to convert.
+    :param midis: List of individual mido.MidiFile objects to convert.
                   (No composer info included)
     """
     images = []
@@ -149,8 +153,9 @@ def process_midis_to_images(midis):
             images.append(image)
         print(f"Processed {i}/{len(midis)} MIDI files", end="\r")
 
-    print(f"Successfully processed {len(midis)} MIDIs into {len(images)} \
-          images.")
+    print(
+        f"Successfully processed {len(midis)} MIDIs into {len(images)} images."
+    )
 
     return images
 
@@ -224,3 +229,102 @@ class PianoRollDataset(Dataset):
         # [1, 88, 1024] using default sizes
         x = torch.from_numpy(arr).unsqueeze(0)
         return x
+
+
+class PianoRollDatasetWithMetadata(Dataset):
+    """
+    Dataset for piano-roll images saved as grayscale PNGs.
+    Includes piece metadata, which is used for
+    classifier-free guidance training for diffusion models.
+    Each sample: tensor [1, 88, x] normalized to [-1, 1].
+    x should be divisible by 8, for UNet pooling.
+    All samples must be the same image size.
+    """
+
+    def __init__(self, data_dir, composer_map, key_map):
+        self.data_dir = Path(data_dir)
+        self.image_files = sorted(self.data_dir.glob("*.png"))
+        if not self.image_files:
+            raise ValueError(f"No images found in {data_dir}")
+
+        print(f"Found {len(self.image_files)} images in {data_dir}")
+
+        self.composer_map = composer_map  # e.g. {'haydn': 0, 'mozart': 1...}
+        self.key_map = key_map            # e.g. {'C': 0, 'Am': 1...}
+
+    def __len__(self):
+        return len(self.image_files)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.image_files[idx]).convert("L")  # grayscale
+        arr = np.array(img, dtype=np.float32)                 # [H, W]
+        H, W = arr.shape
+
+        # Make sure size works with 3 levels of 2x2 pooling
+        assert H % 8 == 0 and W % 8 == 0, f"Bad size {H}x{W} for UNet"
+
+        arr = arr / 255.0          # [0,1]
+        arr = arr * 2.0 - 1.0      # [-1,1]
+
+        # [1, 88, 1024] using default sizes
+        x = torch.from_numpy(arr).unsqueeze(0)
+
+        # Parse filename: haydn_C_120_train_0_0.png
+        fname = self.image_files[idx].name
+        parts = fname.split('_')
+
+        composer_label = self.composer_map.get(parts[0], 0)
+        key_label = self.key_map.get(parts[1], 0)
+
+        # Tempo is continuous, normalize it (e.g., 0 to 1)
+        tempo_val = float(parts[2]) / 200.0
+
+        return {
+            "x": x,
+            "composer": torch.tensor(composer_label).long(),
+            "key": torch.tensor(key_label).long(),
+            "tempo": torch.tensor(tempo_val).float()
+        }
+
+
+def midi_objs_to_images(
+    midi_objs: list[mido.MidiFile],
+    data_dir: str,
+    subfolder_name: str
+):
+    """
+    Converts a list of mido.MidiFile objects into images, which are saved in
+    a subfolder of the given directory.
+    """
+    images = process_midis_to_images(midi_objs)
+    output_path = f"{data_dir}/{subfolder_name}"
+    util.mkdir(output_path)
+    for i, img in enumerate(images):
+        img.save(
+            util.path_join(output_path, f"{subfolder_name}_window_{i:03d}.png")
+        )
+
+
+def midi_objs_to_images_with_metadata(
+    midi_objs: list,
+    data_dir: str,
+    subfolder_name: str
+):
+    output_path = f"{data_dir}/{subfolder_name}"
+    util.mkdir(output_path)
+
+    # Extract metadata
+    for i, (midi, composer) in enumerate(midi_objs):
+        _, meta = extract_notes_and_meta(midi)
+        key_str = meta["key"] if meta["key"] else "Unknown"
+        tempo_val = meta["tempo"] if meta["tempo"] else 120
+
+        # Get images for this specific midi
+        images = midi_to_pianoroll_images(midi)
+
+        fname_base = f"{composer}_{key_str}_{tempo_val}_{subfolder_name}_{i}_"
+
+        for j, img in enumerate(images):
+            # Filename format
+            fname = f"{fname_base}{j}.png"
+            img.save(util.path_join(output_path, fname))

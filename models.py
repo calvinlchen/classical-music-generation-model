@@ -5,6 +5,7 @@ from torch.optim import AdamW
 import matplotlib.pyplot as plt
 from math import ceil
 from tqdm import tqdm
+import numpy as np
 import util
 import os
 
@@ -309,6 +310,160 @@ def train_diffusion_with_early_stopping(
     return train_losses, val_losses
 
 
+def train_cfg_diffusion_with_early_stopping(
+        model, train_loader, val_loader, timesteps, num_composers,
+        num_keys, num_epochs=200, lr=1e-4, gen_freq=10, patience=4,
+        weight_decay=1e-4, device="cpu", save_checkpoints=True,
+        alpha_start=0.2, alpha_end=0.1,
+        save_dir="models/diffusion_cfg_checkpoints"):
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    # "Null" token indices
+    NULL_COMPOSER_IDX = num_composers - 1
+    NULL_KEY_IDX = num_keys - 1
+    NULL_TEMPO_VAL = 0.0
+
+    # Setup
+    _, alphas = prepare_noise_schedule(device, timesteps=timesteps)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    train_losses = []
+    val_losses = []
+
+    best_val_loss = float('inf')
+    patience_counter = 0
+
+    num_epoch_groups = ceil(num_epochs / gen_freq)
+    print(f"\nTraining for {num_epochs} epochs. "
+          f"Validation & checkpoint every {gen_freq} epochs.")
+    print(f"Early Stopping Patience: {patience} checks "
+          f"(≈{patience * gen_freq} epochs).")
+    print("=" * 70)
+
+    # Training Loop
+    for epoch_group in range(num_epoch_groups):
+        pbar = tqdm(range(gen_freq),
+                    desc=f"Block {epoch_group+1}/{num_epoch_groups}")
+
+        # --- TRAIN BLOCK ---
+        for epoch_in_group in pbar:
+            global_epoch = epoch_group * gen_freq + epoch_in_group
+            if global_epoch >= num_epochs:
+                break  # safety in case num_epochs not multiple of gen_freq
+
+            total_train_loss = 0.0
+
+            for batch in train_loader:
+                # Unpack batch (x, composer, key, tempo)
+                imgs = batch['x'].to(device)
+                c_labels = batch['composer'].to(device)
+                k_labels = batch['key'].to(device)
+                t_vals = batch['tempo'].to(device)
+
+                batch_size = imgs.size(0)
+
+                t = torch.randint(0, timesteps, (batch_size,), device=device)
+                noise = torch.randn_like(imgs)
+
+                sqrt_alphas_t = torch.sqrt(alphas[t]).view(-1, 1, 1, 1)
+                sqrt_one_minus_alphas_t = torch.sqrt(1 - alphas[t]).view(
+                    -1, 1, 1, 1)
+                x_t = sqrt_alphas_t * imgs + sqrt_one_minus_alphas_t * noise
+
+                # CLASSIFIER FREE GUIDANCE: DROPOUT
+                # 10% of the time, replace labels with NULL tokens
+                if np.random.random() < 0.1:
+                    c_labels = torch.full_like(c_labels, NULL_COMPOSER_IDX)
+                    k_labels = torch.full_like(k_labels, NULL_KEY_IDX)
+                    t_vals = torch.full_like(t_vals, NULL_TEMPO_VAL)
+
+                predicted_noise = model(x_t, t, c_labels, k_labels, t_vals)
+
+                # Custom weighted loss
+                note_mask = (imgs > -0.5).float()
+                progress = global_epoch / num_epochs
+                alpha_weight = alpha_start + (
+                    alpha_end - alpha_start) * progress
+                weight = 1.0 + alpha_weight * note_mask
+
+                mse = (predicted_noise - noise) ** 2
+                loss = (weight * mse).mean()
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_train_loss += loss.item()
+
+            avg_train_loss = total_train_loss / len(train_loader)
+            train_losses.append(avg_train_loss)
+            pbar.set_postfix({'loss': f'{avg_train_loss:.4f}'})
+
+        # If we exited because we hit num_epochs exactly,
+        # make sure global_epoch exists
+        if global_epoch >= num_epochs:
+            global_epoch = num_epochs - 1
+
+        # --- VALIDATION & EARLY STOPPING BLOCK ---
+        current_val_loss = validate_cfg(
+            model, val_loader, alphas, timesteps, device,
+            num_composers, num_keys
+        )
+        val_losses.append(current_val_loss)
+
+        print(f"\nEpoch {global_epoch+1}: "
+              f"Train Loss={avg_train_loss:.4f}, "
+              f"Val Loss={current_val_loss:.4f}")
+
+        # Visualization
+        samples = [sample_image(model, alphas, device) for _ in range(4)]
+        fig, axes = plt.subplots(1, 4, figsize=(12, 3))
+        for ax, img in zip(axes.flat, samples):
+            show_image_tensor(img, ax=ax)
+        plt.show()
+
+        # --- REGULAR CHECKPOINT (every gen_freq epochs) ---
+        if save_checkpoints:
+            ckpt_path = os.path.join(
+                save_dir, f"diffusion_epoch_{global_epoch+1:04d}.pt"
+            )
+            torch.save(
+                {
+                    "epoch": global_epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "train_loss": avg_train_loss,
+                    "val_loss": current_val_loss,
+                },
+                ckpt_path,
+            )
+            print(f"Saved checkpoint to {ckpt_path}")
+
+        # --- BEST-MODEL CHECKPOINT + EARLY STOPPING ---
+        if current_val_loss < best_val_loss:
+            best_val_loss = current_val_loss
+            patience_counter = 0  # Reset counter
+
+            # Save best model weights separately
+            if save_checkpoints:
+                best_path = os.path.join(save_dir, "best_model.pt")
+                torch.save(model.state_dict(), best_path)
+                print(f"New best model, saved to {best_path}")
+        else:
+            patience_counter += 1
+            print(f"No improvement. Patience: {patience_counter}/{patience}")
+
+        if patience_counter >= patience or global_epoch + 1 >= num_epochs:
+            print(f"\nStopping early -- validation loss hasn't improved for "
+                  f"{patience} checks or max epochs reached.")
+            break
+
+    print("=" * 70)
+    return train_losses, val_losses
+
+
 class SimpleUNet(nn.Module):
     def __init__(self, channels=[16, 32, 64, 64], time_emb_dim=64):
         super().__init__()
@@ -372,6 +527,80 @@ class SimpleUNet(nn.Module):
         return self.conv_out(x)  # [B, 1, 88, 1024]
 
 
+class ConditionedUNet(nn.Module):
+    def __init__(self,
+                 channels=[16, 32, 64, 128],
+                 time_emb_dim=64,
+                 num_composers=4,  # +1 for null token
+                 num_keys=26,      # 12 major + 12 minor + 1 Unknown + 1 null
+                 tempo_dim=1):
+        super().__init__()
+
+        # --- Embedding Layers ---
+        self.time_mlp = nn.Sequential(
+            SinusoidalPositionEmbedding(time_emb_dim),
+            nn.Linear(time_emb_dim, time_emb_dim),
+            nn.ReLU()
+        )
+
+        # Composer Embedding (output size matches time_emb_dim)
+        self.composer_emb = nn.Embedding(num_composers, time_emb_dim)
+
+        # Key Embedding
+        self.key_emb = nn.Embedding(num_keys, time_emb_dim)
+
+        # Tempo Projection (Scalar -> Vector)
+        self.tempo_mlp = nn.Sequential(
+            nn.Linear(1, time_emb_dim),
+            nn.SiLU(),
+            nn.Linear(time_emb_dim, time_emb_dim)
+        )
+
+        # --- The Rest of your UNet (Identical to SimpleUNet) ---
+        self.conv_in = nn.Conv2d(1, channels[0], 3, padding=1)
+        self.down1 = ResidualBlock(channels[0], channels[1], time_emb_dim)
+        self.down2 = ResidualBlock(channels[1], channels[2], time_emb_dim)
+        self.down3 = ResidualBlock(channels[2], channels[3], time_emb_dim)
+        self.bottleneck = ResidualBlock(channels[3], channels[3], time_emb_dim)
+        self.up3 = ResidualBlock(
+            channels[3] + channels[2], channels[2], time_emb_dim)
+        self.up2 = ResidualBlock(
+            channels[2] + channels[1], channels[1], time_emb_dim)
+        self.up1 = ResidualBlock(
+            channels[1] + channels[0], channels[0], time_emb_dim)
+        self.conv_out = nn.Conv2d(channels[0], 1, 3, padding=1)
+
+    def forward(self, x, t, composer_labels, key_labels, tempo_vals):
+        # 1. Compute Time Embedding
+        t_emb = self.time_mlp(t)
+
+        # 2. Compute Class Embeddings
+        c_emb = self.composer_emb(composer_labels)
+        k_emb = self.key_emb(key_labels)
+        tmp_emb = self.tempo_mlp(tempo_vals.unsqueeze(-1))
+
+        # 3. Combine Embeddings (Element-wise addition is standard)
+        # This "global embedding" contains time + composer + key + tempo info
+        global_emb = t_emb + c_emb + k_emb + tmp_emb
+
+        # 4. Pass combined embedding to blocks
+        x0 = self.conv_in(x)
+        x1 = self.down1(F.max_pool2d(x, 2), global_emb)
+        x2 = self.down2(F.max_pool2d(x1, 2), global_emb)
+        x3 = self.down3(F.max_pool2d(x2, 2), global_emb)
+
+        x = self.bottleneck(x3, global_emb)
+
+        x = F.interpolate(x, scale_factor=2, mode='nearest')
+        x = self.up3(torch.cat([x, x2], dim=1), global_emb)
+        x = F.interpolate(x, scale_factor=2, mode='nearest')
+        x = self.up2(torch.cat([x, x1], dim=1), global_emb)
+        x = F.interpolate(x, scale_factor=2, mode='nearest')
+        x = self.up1(torch.cat([x, x0], dim=1), global_emb)
+
+        return self.conv_out(x)
+
+
 def validate(model, val_loader, alphas, timesteps, device):
     """Computes validation loss (Pure MSE) to check for overfitting."""
     model.eval()
@@ -401,8 +630,43 @@ def validate(model, val_loader, alphas, timesteps, device):
     return total_val_loss / len(val_loader)
 
 
+def validate_cfg(model, val_loader, alphas, timesteps,
+                 device, num_composers, num_keys):
+    """Computes validation loss for ConditionedUNet."""
+    model.eval()
+    total_val_loss = 0
+
+    # No null dropout
+
+    with torch.no_grad():
+        for batch in val_loader:
+            # Unpack dictionary batch
+            x = batch['x'].to(device)
+            c_labels = batch['composer'].to(device)
+            k_labels = batch['key'].to(device)
+            t_vals = batch['tempo'].to(device)
+
+            batch_size = x.size(0)
+            t = torch.randint(0, timesteps, (batch_size,), device=device)
+            noise = torch.randn_like(x)
+
+            sqrt_alphas_t = torch.sqrt(alphas[t]).view(-1, 1, 1, 1)
+            sqrt_one_minus_alphas_t = torch.sqrt(
+                1 - alphas[t]).view(-1, 1, 1, 1)
+            x_t = sqrt_alphas_t * x + sqrt_one_minus_alphas_t * noise
+
+            # Pass all arguments
+            predicted_noise = model(x_t, t, c_labels, k_labels, t_vals)
+
+            loss = F.mse_loss(predicted_noise, noise)
+            total_val_loss += loss.item()
+
+    model.train()
+    return total_val_loss / len(val_loader)
+
+
 @torch.no_grad()
-def sample_image(model, alphas, device, img_size=[88, 1024]):
+def sample_image(model, alphas, device, img_size=[176, 256]):
     """
     Generate one image through reverse diffusion.
 
@@ -412,7 +676,7 @@ def sample_image(model, alphas, device, img_size=[88, 1024]):
         device: torch device
 
     Returns:
-        x: Generated image tensor (1, 88, 1024) normalized to [-1, 1]
+        x: Generated image tensor (1, 176, 256) normalized to [-1, 1]
     """
     alphas = alphas.to(device)
     t = len(alphas)
@@ -441,6 +705,66 @@ def sample_image(model, alphas, device, img_size=[88, 1024]):
             x = pred_x0
 
     return x  # [1, 88, 1024]
+
+
+@torch.no_grad()
+def sample_image_guided(model, alphas, device,
+                        composer_idx, key_idx, tempo_val,
+                        num_composers, num_keys,
+                        guidance_scale=3.0, img_size=[176, 256]):
+    """
+    Generates music with Classifier-Free Guidance.
+
+    Args:
+        guidance_scale: Strength of conditioning.
+                        1.0 = standard conditional, >1.0 = amplified style.
+    """
+    model.eval()
+    alphas = alphas.to(device)
+    t_steps = len(alphas)
+
+    # Null tokens for the unconditional pass
+    NULL_COMPOSER = num_composers - 1
+    NULL_KEY = num_keys - 1
+    NULL_TEMPO = 0.0
+
+    # Initialize noise
+    x = torch.randn(1, 1, img_size[0], img_size[1], device=device)
+
+    for step in reversed(range(t_steps)):
+        a = alphas[step]
+        sqrt_a = torch.sqrt(a)
+        sqrt_a_diff = torch.sqrt(1 - a)
+
+        # 1. Create Batch for [Conditional, Unconditional]
+        x_in = torch.cat([x, x])
+        t_in = torch.tensor([step, step], device=device)
+
+        c_in = torch.tensor([composer_idx, NULL_COMPOSER], device=device)
+        k_in = torch.tensor([key_idx, NULL_KEY], device=device)
+        tmp_in = torch.tensor([tempo_val, NULL_TEMPO], device=device)
+
+        # 2. Forward Pass (Get both predictions at once)
+        noise_pred = model(x_in, t_in, c_in, k_in, tmp_in)
+        noise_cond, noise_uncond = noise_pred.chunk(2)
+
+        # 3. Combine with Guidance Formula
+        final_noise = (
+            noise_uncond + guidance_scale * (noise_cond - noise_uncond)
+        )
+
+        # 4. Standard Reverse Step
+        pred_x0 = (x - sqrt_a_diff * final_noise) / sqrt_a
+        pred_x0 = torch.clamp(pred_x0, -1.0, 1.0)
+
+        if step > 0:
+            z = torch.randn_like(x)
+            a_prev = alphas[step - 1]
+            x = torch.sqrt(a_prev) * pred_x0 + torch.sqrt(1 - a_prev) * z
+        else:
+            x = pred_x0
+
+    return x
 
 
 # ----- PRETRAINED GPT-2 TRANSFORMER MODEL CLASSES AND METHODS -----
