@@ -1,4 +1,3 @@
-from collections import Counter
 from pathlib import Path
 from torch.utils.data import Dataset
 from midi_conversion import midi_to_text, midi_to_pianoroll_images
@@ -7,7 +6,6 @@ import mido
 from PIL import Image
 import numpy as np
 import torch
-import os
 
 
 # Constants
@@ -55,7 +53,7 @@ def get_midis_by_composer(composer):
                         train_val_test_midis[i].append((midi_obj, c))
                     except Exception as e:
                         print(f"Could not load {midi_file}: {e}")
-        total_midis += len(train_val_test_midis[i])        
+        total_midis += len(train_val_test_midis[i])
         print(f"Loaded {len(train_val_test_midis[i])} MIDI files from {path}")
 
     print(f"{total_midis} MIDI files retrieved.")
@@ -134,11 +132,12 @@ def process_midis_to_text(midis: list[tuple[mido.MidiFile, str]]):
 
     return texts
 
+
 def process_midis_to_images(midis):
     """
     Process a series of MIDI files into images by calling the
     midi_to_pianoroll_images method from midi_conversion.py
-    
+
     :param midis: List of individual mido.MidiObject objects to convert.
                   (No composer info included)
     """
@@ -150,7 +149,8 @@ def process_midis_to_images(midis):
             images.append(image)
         print(f"Processed {i}/{len(midis)} MIDI files", end="\r")
 
-    print(f"Successfully processed {len(midis)} MIDIs into {len(images)} images.")
+    print(f"Successfully processed {len(midis)} MIDIs into {len(images)} \
+          images.")
 
     return images
 
@@ -159,7 +159,7 @@ class VocabBuilder:
     def __init__(self, train_seqs, add_unknown_token=True):
         """
         Build vocabulary from training sequences only.
-        
+
         :param train_seqs: list of strings (training text sequences)
         :param add_unknown_token: whether to include <UNK>
         """
@@ -168,10 +168,10 @@ class VocabBuilder:
             all_tokens.extend(s.split())
 
         self.vocab = sorted(set(all_tokens))
-        
+
         if add_unknown_token:
             self.vocab.extend(["<UNK>"])
-        
+
         self.stoi = {t: i for i, t in enumerate(self.vocab)}
         self.itos = {i: t for t, i in self.stoi.items()}
         self.vocab_size = len(self.vocab)
@@ -179,7 +179,8 @@ class VocabBuilder:
         print(f"Vocabulary size (train only): {self.vocab_size}")
 
         # Store training IDs
-        self.train_ids = torch.tensor([self.stoi[t] for t in all_tokens], dtype=torch.long)
+        self.train_ids = torch.tensor(
+            [self.stoi[t] for t in all_tokens], dtype=torch.long)
 
     def encode(self, text: str):
         """Convert text string → list of token IDs, map unknowns to <UNK>"""

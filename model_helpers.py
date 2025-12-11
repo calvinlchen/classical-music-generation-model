@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
+
 def get_batch(data_ids, block_size=128, batch_size=32, device="cpu"):
     """
     data_ids: 1D LongTensor of token ids.
@@ -11,10 +12,11 @@ def get_batch(data_ids, block_size=128, batch_size=32, device="cpu"):
     """
     ix = torch.randint(0, len(data_ids) - block_size - 1, (batch_size,))
 
-    x = torch.stack([data_ids[i : i + block_size] for i in ix])
-    y = torch.stack([data_ids[i + 1 : i + block_size + 1] for i in ix])
+    x = torch.stack([data_ids[i: i + block_size] for i in ix])
+    y = torch.stack([data_ids[i + 1: i + block_size + 1] for i in ix])
 
     return x.to(device).long(), y.to(device).long()
+
 
 def estimate_loss(
     model,
@@ -43,7 +45,11 @@ def estimate_loss(
             total = 0
 
             for _ in range(10):
-                xb, yb = get_batch(data_ids, block_size=block_size, device=device)
+                xb, yb = get_batch(
+                    data_ids,
+                    block_size=block_size,
+                    device=device
+                )
                 logits = model(xb)  # [B, T, vocab_size]
 
                 # cross-entropy expects [N, C] and [N]
@@ -65,6 +71,7 @@ def estimate_loss(
     model.train()
     return out
 
+
 class ResidualBlock(nn.Module):
     """Residual block with time embedding."""
 
@@ -73,7 +80,9 @@ class ResidualBlock(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
         self.conv2 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
         self.time_mlp = nn.Linear(time_emb_dim, out_channels)
-        self.shortcut = nn.Conv2d(in_channels, out_channels, 1) if in_channels != out_channels else nn.Identity()
+        self.shortcut = nn.Conv2d(
+            in_channels, out_channels, 1
+        ) if in_channels != out_channels else nn.Identity()
 
     def forward(self, x, t):
         h = F.relu(self.conv1(x))
@@ -94,12 +103,22 @@ class SinusoidalPositionEmbedding(nn.Module):
         device = time.device
         half_dim = self.dim // 2
         embeddings = torch.log(torch.tensor(10000.0)) / (half_dim - 1)
-        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = torch.exp(
+            torch.arange(half_dim, device=device) * -embeddings
+        )
         embeddings = time[:, None] * embeddings[None, :]
-        embeddings = torch.cat([torch.sin(embeddings), torch.cos(embeddings)], dim=-1)
+        embeddings = torch.cat(
+            [torch.sin(embeddings), torch.cos(embeddings)], dim=-1
+        )
         return embeddings
 
-def prepare_noise_schedule(device, timesteps=200, beta_start=0.0001, beta_end=0.02):
+
+def prepare_noise_schedule(
+    device,
+    timesteps=200,
+    beta_start=0.0001,
+    beta_end=0.02
+):
     """
     Precompute all values needed for the forward diffusion process.
 
@@ -117,6 +136,7 @@ def prepare_noise_schedule(device, timesteps=200, beta_start=0.0001, beta_end=0.
 
     return betas, alphas
 
+
 def show_image_tensor(tensor, ax=None, title=None):
     """
     tensor: [C, H, W] in [-1,1], with C=1 or 3
@@ -124,10 +144,10 @@ def show_image_tensor(tensor, ax=None, title=None):
     tensor = ((tensor + 1) / 2).clamp(0, 1)
 
     if tensor.shape[0] == 1:
-        img_np = tensor.squeeze(0).cpu().numpy()       # [H, W]
+        img_np = tensor.squeeze(0).cpu().numpy()        # [H, W]
         cmap = "gray"
     else:
-        img_np = tensor.permute(1, 2, 0).cpu().numpy() # [H, W, C]
+        img_np = tensor.permute(1, 2, 0).cpu().numpy()  # [H, W, C]
         cmap = None
 
     if ax is None:
