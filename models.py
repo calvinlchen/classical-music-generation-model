@@ -1,11 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import AdamW
 import matplotlib.pyplot as plt
 from math import ceil
 from tqdm import tqdm
+import util
 import os
 
+from transformers import (
+    get_linear_schedule_with_warmup
+)
 
 from model_helpers import SinusoidalPositionEmbedding, ResidualBlock
 from model_helpers import prepare_noise_schedule, show_image_tensor
@@ -69,7 +74,7 @@ def train_midi_text_transformer(
         lr:           learning rate
     """
     if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = util.get_best_device()
     device = torch.device(device)
 
     model.to(device)
@@ -438,4 +443,76 @@ def sample_image(model, alphas, device, img_size=[88, 1024]):
 
 # ----- PRETRAINED GPT-2 TRANSFORMER MODEL CLASSES AND METHODS -----
 
+def train_gpt_2(model, train_loader, val_loader, num_epochs=5, lr=3e-4,
+                weight_decay=0.01, device: str | torch.device = None,
+                model_save_dir: str = None):
+    if device is None:
+        device = util.get_best_device()
 
+    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    total_steps = num_epochs * len(train_loader)
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=total_steps // 10,
+        num_training_steps=total_steps,
+    )
+
+    best_val_loss = float("inf")
+
+    for epoch in range(num_epochs):
+        model.train()
+        total_train_loss = 0.0
+
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}",
+                    leave=True)
+
+        for batch in pbar:
+            input_ids = batch["input_ids"].to(device)
+            labels = batch["labels"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+
+            outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels,
+            )
+            loss = outputs.loss
+
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            scheduler.step()
+
+            total_train_loss += loss.item()
+
+            pbar.set_postfix({"batch_loss": f"{loss.item():.4f}"})
+
+        avg_train_loss = total_train_loss / len(train_loader)
+
+        # Validation
+        model.eval()
+        total_val_loss = 0.0
+        with torch.no_grad():
+            for batch in val_loader:
+                input_ids = batch["input_ids"].to(device)
+                labels = batch["labels"].to(device)
+                attention_mask = batch["attention_mask"].to(device)
+
+                outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                )
+                total_val_loss += outputs.loss.item()
+
+        avg_val_loss = total_val_loss / len(val_loader)
+        print(f"Epoch {epoch+1}/{num_epochs} | train loss: \
+              {avg_train_loss:.4f} | val loss: {avg_val_loss:.4f}")
+
+        if model_save_dir is not None:
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                print("  -> saving best model")
+                os.makedirs(model_save_dir, exist_ok=True)
+                model.save_pretrained(model_save_dir)

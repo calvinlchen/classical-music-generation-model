@@ -1,4 +1,5 @@
 import os
+import torch
 
 
 def mkdir(dir: str):
@@ -52,3 +53,7 @@ def write_txt_file(
     with open(path_join(dir, filename), "w", encoding="utf-8") as f:
         f.write(text)
     return
+
+
+def get_best_device():
+    return "cuda" if torch.cuda.is_available() else "cpu"
