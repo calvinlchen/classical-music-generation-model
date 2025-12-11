@@ -102,7 +102,7 @@ except Exception as e:
     gpt2_tokenizer = None
 
 # Load trained diffusion model checkpoints once at startup
-UNCOND_DIFF_MODEL_PATH = "../models/diffusion_unconditional_20000/\
+UNCOND_DIFF_MODEL_PATH = "../models/diffusion_unconditional_12000/\
 best_model.pt"
 COND_DIFF_MODEL_PATH = "../models/diffusion_conditional_20000/best_model.pt"
 

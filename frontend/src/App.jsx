@@ -1059,10 +1059,91 @@ function TransformerPage() {
   );
 }
 
-// ----------------- Root app with three "pages" -----------------
+// ----------------- About page -----------------
+
+function AboutPage() {
+  const sectionStyle = {
+    background: "rgba(15,23,42,0.85)",
+    border: "1px solid rgba(148,163,184,0.25)",
+    borderRadius: "1rem",
+    padding: "1.25rem",
+    marginBottom: "1rem",
+  };
+
+  const headingStyle = {
+    margin: "0 0 0.5rem 0",
+    fontSize: "1.05rem",
+    color: "#e5e7eb",
+  };
+
+  const bodyStyle = { color: "#cbd5e1", fontSize: "0.95rem", lineHeight: 1.6 };
+
+  return (
+    <div style={{ display: "grid", gap: "1rem" }}>
+      <div style={sectionStyle}>
+        <h2 style={headingStyle}>Project Purpose</h2>
+        <p style={bodyStyle}>
+          This web app serves as an experiment to make classical-style music generation using accessible machine
+          learning methods. Specifically, we train on a dataset of only classical-era (roughly 1725-1800 A.D.) composers --
+          Haydn, Mozart, and Beethoven -- in an attempt to create models with a roughly consistent tonal style. While this
+          is thus limited also by 
+        </p>
+      </div>
+
+      <div style={sectionStyle}>
+        <h2 style={headingStyle}>Training Data & Conversion</h2>
+        <p style={bodyStyle}>
+          Source data: curated MIDI scores from Haydn, Mozart, and Beethoven. MIDI files collected from a public dataset:
+          <a href="https://huggingface.co/datasets/drengskapur/midi-classical-music"> huggingface.co/datasets/drengskapur/midi-classical-music</a> <br></br><br></br>
+          Each file is normalized (tempo/key/time-signature) and converted to two parallel representations:
+        </p>
+        <ul style={{ ...bodyStyle, paddingLeft: "1.2rem", margin: "0.35rem 0" }}>
+          <li>
+            <strong>Text tokens:</strong> metadata tokens (COMPOSER_x, KEY_x, TIME_SIGNATURE_a/b, TEMPO_BPM_x),
+            structural tokens (&lt;SOS&gt;, MEASURE, BEAT, POS_i), and note tokens (NOTE_p, DUR_t in grid units,
+            VEL_v binned). This stream feeds the transformer models.
+          </li>
+          <li>
+            <strong>Piano-roll images:</strong> 88-by-1024 grids (pitch vs. time) used as diffusion targets; note density
+            and rhythm patterns are learned directly from these images.
+          </li>
+        </ul>
+      </div>
+
+      <div style={sectionStyle}>
+        <h2 style={headingStyle}>Transformer Models</h2>
+        <ul style={{ ...bodyStyle, paddingLeft: "1.2rem", margin: 0 }}>
+          <li>
+            <strong>In-house transformer:</strong> custom causal encoder (512-d hidden, 8 layers, 8 heads) trained from scratch
+            on the tokenized classical corpus. No UI-enforced context limit.
+          </li>
+          <li>
+            <strong>GPT-2 tuned:</strong> pretrained GPT-2 LM head fine-tuned on the same tokenization; 1024-token context window
+            (prompt + generated). The frontend enforces this window when GPT-2 mode is selected.
+          </li>
+        </ul>
+      </div>
+
+      <div style={sectionStyle}>
+        <h2 style={headingStyle}>Diffusion Models</h2>
+        <ul style={{ ...bodyStyle, paddingLeft: "1.2rem", margin: 0 }}>
+          <li>
+            <strong>Unconditional diffusion:</strong> UNet denoises piano-roll images from pure noise to produce free-form samples.
+          </li>
+          <li>
+            <strong>Conditional CFG diffusion:</strong> UNet with composer/key/tempo embeddings; classifier-free guidance controls
+            how strongly the chosen conditions influence the output.
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// ----------------- Root app with tabs -----------------
 
 function App() {
-  // Options: "transformer" | "diffusion"
+  // Options: "transformer" | "diffusion" | "about"
   const [tab, setTab] = useState("transformer"); 
 
   const getButtonStyle = (active) => ({
@@ -1121,12 +1202,18 @@ function App() {
           >
             Diffusion
           </button>
+          <button
+            onClick={() => setTab("about")}
+            style={getButtonStyle(tab === "about")}
+          >
+            About
+          </button>
         </div>
 
         {/* Page Routing */}
         {tab === "diffusion" && <DiffusionPage />}
         {tab === "transformer" && <TransformerPage />}
-        
+        {tab === "about" && <AboutPage />}
       </div>
     </div>
   );
