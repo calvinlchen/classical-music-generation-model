@@ -272,6 +272,70 @@ def generate_midi_bytes_from_gpt2(
     return buf.getvalue()
 
 
+# Helper wrappers that also return the generated token text
+def generate_midi_and_text_inhouse(start_text: str, max_new_tokens: int = 500):
+    start_ids = torch.tensor(
+        [vb.encode(start_text)], dtype=torch.long).to(DEVICE)
+
+    transformer_model.eval()
+    with torch.no_grad():
+        generated_ids = generate_midi_tokens_with_transformer(
+            transformer_model,
+            sos_id=vb.stoi["<SOS>"],
+            eos_id=vb.stoi["<EOS>"],
+            start_tokens=start_ids[0].tolist(),
+            max_new_tokens=max_new_tokens,
+        )
+
+    generated_text = vb.decode(generated_ids)
+    midi_file = text_to_midi(generated_text)
+    buf = io.BytesIO()
+    midi_file.save(file=buf)
+    buf.seek(0)
+    return buf.getvalue(), generated_text
+
+
+def generate_midi_and_text_gpt2(
+    prompt_text: str,
+    max_new_tokens: int = 500,
+    temperature: float = 0.8,
+    top_k: int = 50,
+):
+    if gpt2_model is None or gpt2_tokenizer is None:
+        raise RuntimeError("GPT-2 tuned model is not available on the server.")
+
+    prompt_ids = gpt2_tokenizer.encode(
+        prompt_text, add_special_tokens=False)
+    input_ids = torch.tensor(
+        [[gpt2_tokenizer.bos_token_id] + prompt_ids],
+        dtype=torch.long
+    ).to(DEVICE)
+    attention_mask = (input_ids != gpt2_tokenizer.pad_token_id).long()
+
+    gpt2_model.eval()
+    with torch.no_grad():
+        output_ids = gpt2_model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=temperature,
+            top_k=top_k,
+            pad_token_id=gpt2_tokenizer.pad_token_id,
+            eos_token_id=gpt2_tokenizer.eos_token_id,
+        )
+
+    generated_ids = output_ids[0].tolist()
+    generated_text = gpt2_tokenizer.decode(
+        generated_ids, skip_special_tokens=True)
+
+    midi_file = text_to_midi(generated_text)
+    buf = io.BytesIO()
+    midi_file.save(file=buf)
+    buf.seek(0)
+    return buf.getvalue(), generated_text
+
+
 # Helper method
 def convert_pianoroll_sample_to_bytes(sample):
 
@@ -365,6 +429,8 @@ def generate_midi_from_transformer(
             status_code=400
         )
 
+    generated_text = None
+
     try:
         if model_type == "gpt2":
             if gpt2_model is None or gpt2_tokenizer is None:
@@ -396,16 +462,18 @@ def generate_midi_from_transformer(
                     status_code=400,
                 )
 
-            midi_bytes = generate_midi_bytes_from_gpt2(
-                start_text,
+            midi_bytes, generated_text = generate_midi_and_text_gpt2(
+                prompt_text=start_text,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 top_k=top_k,
             )
             filename = "gpt2_transformer_sample.mid"
         else:
-            midi_bytes = generate_midi_bytes_from_text(
-                start_text, max_new_tokens)
+            midi_bytes, generated_text = generate_midi_and_text_inhouse(
+                start_text=start_text,
+                max_new_tokens=max_new_tokens
+            )
             filename = "transformer_sample.mid"
     except Exception as e:
         print(f"Error generating transformer MIDI: {e}")
@@ -417,6 +485,7 @@ def generate_midi_from_transformer(
         {
             "midi_base64": midi_b64,
             "filename": filename,
+            "generated_text": generated_text,
         }
     )
 

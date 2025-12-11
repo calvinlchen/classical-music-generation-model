@@ -591,6 +591,7 @@ function TransformerPage() {
   const [status, setStatus] = useState("");
   const [downloadUrl, setDownloadUrl] = useState(null);
   const [midiObj, setMidiObj] = useState(null);
+  const [generatedText, setGeneratedText] = useState("");
 
   // --- AI Assistant State ---
   const [aiDescription, setAiDescription] = useState("");
@@ -650,6 +651,7 @@ function TransformerPage() {
 
   const handleGenerate = async () => {
     const tokensForRequest = maxNewTokensNumber;
+    setGeneratedText("");
 
     if (modelType === "gpt2" && exceedsGpt2Limit) {
       const allowed = Math.max(1024 - promptTokenCount, 0);
@@ -690,6 +692,7 @@ function TransformerPage() {
       const arrayBuf = await midiBlob.arrayBuffer();
       const midi = new Midi(arrayBuf);
       setMidiObj(midi);
+      setGeneratedText(data.generated_text || "");
 
       setStatus("Generation complete.");
     } catch (err) {
@@ -1013,8 +1016,43 @@ function TransformerPage() {
               fontWeight: 600,
             }}
           >
-            ⬇️ Download MIDI
+            Download MIDI
           </a>
+        </div>
+      )}
+
+      {generatedText && (
+        <div
+          style={{
+            marginTop: "0.75rem",
+            background: "rgba(15,23,42,0.7)",
+            border: "1px solid rgba(148,163,184,0.35)",
+            borderRadius: "0.5rem",
+            padding: "0.75rem",
+            maxHeight: "180px",
+            overflowY: "auto",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.9rem",
+              color: "#cbd5e1",
+              marginBottom: "0.35rem",
+            }}
+          >
+            Generated token sequence
+          </div>
+          <div
+            style={{
+              fontFamily: "monospace",
+              fontSize: "0.85rem",
+              color: "#a5b4fc",
+              wordBreak: "break-word",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {generatedText}
+          </div>
         </div>
       )}
     </>
