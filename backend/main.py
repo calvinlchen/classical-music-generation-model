@@ -24,8 +24,14 @@ TEXT_DIR = ROOT_DIR / "data" / "example_midi_texts"
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from data_preprocessing import VocabBuilder
-from models import SimpleUNet, sample_image, MidiTextTransformer
-from models import generate_midi_tokens_with_transformer
+from models import (
+    SimpleUNet,
+    sample_image,
+    MidiTextTransformer,
+    generate_midi_tokens_with_transformer,
+    ConditionedUNet,
+    sample_image_guided
+)
 from model_helpers import prepare_noise_schedule
 from midi_conversion import pianoroll_images_to_midi, text_to_midi
 
@@ -54,13 +60,43 @@ app.add_middleware(
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Load trained diffusion model checkpoint once at startup
-CHECKPOINT_PATH = "../models/diffusion_12000/diffusion_epoch_0010.pt"
+COMPOSER_MAP = {
+    "haydn": 0,
+    "mozart": 1,
+    "beethoven": 2,
+    "null": 3
+}
+KEY_MAP = {
+    "C": 0, "Cm": 1, "Db": 2, "C#m": 3, "D": 4, "Dm": 5,
+    "Eb": 6, "Ebm": 7, "E": 8, "Em": 9, "F": 10, "Fm": 11, "Gb": 12,
+    "F#m": 13, "G": 14, "Gm": 15, "Ab": 16, "G#m": 17, "A": 18,
+    "Am": 19, "Bb": 20, "Bbm": 21, "B": 22, "Bm": 23, "Unknown": 24,
+    "null": 25  # NULL token
+}
 
-diff_model = SimpleUNet().to(DEVICE)
-checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
-diff_model.load_state_dict(checkpoint["model_state_dict"])
-diff_model.eval()
+# Load trained diffusion model checkpoints once at startup
+UNCOND_DIFF_MODEL_PATH = "../models/diffusion_unconditional_20000/\
+best_model.pt"
+COND_DIFF_MODEL_PATH = "../models/diffusion_conditional_20000/best_model.pt"
+
+diff_unconditional_model = SimpleUNet().to(DEVICE)
+checkpoint = torch.load(UNCOND_DIFF_MODEL_PATH, map_location=DEVICE)
+if "model_state_dict" in checkpoint:
+    diff_unconditional_model.load_state_dict(checkpoint["model_state_dict"])
+else:
+    diff_unconditional_model.load_state_dict(checkpoint)
+diff_unconditional_model.eval()
+
+diff_cond_model = ConditionedUNet(
+    num_composers=len(COMPOSER_MAP),
+    num_keys=len(KEY_MAP)
+).to(DEVICE)
+checkpoint = torch.load(COND_DIFF_MODEL_PATH, map_location=DEVICE)
+if "model_state_dict" in checkpoint:
+    diff_cond_model.load_state_dict(checkpoint["model_state_dict"])
+else:
+    diff_cond_model.load_state_dict(checkpoint)
+diff_cond_model.eval()
 
 # Load vocab for transformer model
 vocab_data = torch.load("../models/transformer/vocab.pt")
@@ -82,7 +118,8 @@ transformer_weights = torch.load(
 transformer_model.load_state_dict(transformer_weights)
 
 
-def generate_midi_and_image_bytes_from_diffusion(
+# for UNconditional model
+def generate_midi_bytes_with_unconditional_diffusion(
     T: int = 100,
     height: int = 176,
     width: int = 256,
@@ -94,30 +131,49 @@ def generate_midi_and_image_bytes_from_diffusion(
     with torch.no_grad():
         _, alphas = prepare_noise_schedule(DEVICE, timesteps=T)
         sample = sample_image(
-            diff_model,
+            diff_unconditional_model,
             alphas,
             device=DEVICE,
             img_size=[height, width],
         )
 
-    # Map from [-1, 1] to [0, 255] and to a PIL image
-    sample_01 = (sample + 1.0) / 2.0
-    sample_01 = sample_01.squeeze(0).cpu().numpy()
-    sample_img = (sample_01 * 255).astype(np.uint8)
-    img = Image.fromarray(sample_img, mode="L")
+    midi_bytes, img_bytes = convert_pianoroll_sample_to_bytes(sample)
 
-    # ---- MIDI bytes ----
-    midi_file = pianoroll_images_to_midi([img])
-    midi_buf = io.BytesIO()
-    midi_file.save(file=midi_buf)
-    midi_buf.seek(0)
-    midi_bytes = midi_buf.getvalue()
+    return midi_bytes, img_bytes
 
-    # ---- PNG image bytes ----
-    img_buf = io.BytesIO()
-    img.save(img_buf, format="PNG")
-    img_buf.seek(0)
-    img_bytes = img_buf.getvalue()
+
+# for CONDITIONAL model
+def generate_midi_bytes_with_conditional_diffusion(
+    composer: str,
+    key: str,
+    bpm: int,
+    guidance: float = 3.0,
+    T: int = 100
+):
+    # Map text to indices
+    c_idx = COMPOSER_MAP.get(composer.lower(), COMPOSER_MAP["null"])
+    k_idx = KEY_MAP.get(key, KEY_MAP["Unknown"])
+
+    # Normalize BPM (matches training logic)
+    tempo_val = float(bpm) / 200.0
+
+    with torch.no_grad():
+        _, alphas = prepare_noise_schedule(DEVICE, timesteps=T)
+
+        # Use the guided sampler from models.py
+        sample = sample_image_guided(
+            diff_cond_model,
+            alphas,
+            DEVICE,
+            composer_idx=c_idx,
+            key_idx=k_idx,
+            tempo_val=tempo_val,
+            num_composers=len(COMPOSER_MAP),
+            num_keys=len(KEY_MAP),
+            guidance_scale=guidance
+        )
+
+    midi_bytes, img_bytes = convert_pianoroll_sample_to_bytes(sample)
 
     return midi_bytes, img_bytes
 
@@ -148,9 +204,33 @@ def generate_midi_bytes_from_text(start_text, max_new_tokens=500):
     return buf.getvalue()
 
 
+# Helper method
+def convert_pianoroll_sample_to_bytes(sample):
+
+    # Map from [-1, 1] to [0, 255] and to a PIL image
+    sample_01 = (sample + 1.0) / 2.0
+    sample_01 = sample_01.squeeze(0).cpu().numpy()
+    sample_img = (sample_01 * 255).astype(np.uint8)
+    img = Image.fromarray(sample_img, mode="L")
+
+    # ---- MIDI bytes ----
+    midi_file = pianoroll_images_to_midi([img])
+    midi_buf = io.BytesIO()
+    midi_file.save(file=midi_buf)
+    midi_buf.seek(0)
+    midi_bytes = midi_buf.getvalue()
+
+    # ---- PNG image bytes ----
+    img_buf = io.BytesIO()
+    img.save(img_buf, format="PNG")
+    img_buf.seek(0)
+    img_bytes = img_buf.getvalue()
+    return midi_bytes, img_bytes
+
+
 @app.post("/generate-midi-from-diffusion")
 def generate_midi_from_diffusion():
-    midi_bytes, img_bytes = generate_midi_and_image_bytes_from_diffusion()
+    midi_bytes, img_bytes = generate_midi_bytes_with_unconditional_diffusion()
 
     midi_b64 = base64.b64encode(midi_bytes).decode("ascii")
     img_b64 = base64.b64encode(img_bytes).decode("ascii")
@@ -163,6 +243,28 @@ def generate_midi_from_diffusion():
             "filename": "generated.mid",
         }
     )
+
+
+class ConditionalDiffusionRequest(BaseModel):
+    composer: str = "mozart"
+    key: str = "C"
+    bpm: int = 120
+    guidance: float = 3.0
+
+
+@app.post("/generate-midi-from-diffusion-conditional")
+def generate_midi_conditional(req: ConditionalDiffusionRequest):
+    midi_bytes, img_bytes = generate_midi_bytes_with_conditional_diffusion(
+        req.composer, req.key, req.bpm, req.guidance
+    )
+
+    midi_b64 = base64.b64encode(midi_bytes).decode("ascii")
+    img_b64 = base64.b64encode(img_bytes).decode("ascii")
+
+    return JSONResponse({
+        "midi_base64": midi_b64,
+        "image_base64": img_b64
+    })
 
 
 @app.post("/generate-midi-from-transformer")
@@ -258,7 +360,7 @@ def generate_seed_text(request: SeedRequest):
             content={
                 "error": "OpenAI API Key is missing on the server. AI features are disabled."
             },
-            status_code=503 # Service Unavailable
+            status_code=503  # Service Unavailable
         )
 
     try:

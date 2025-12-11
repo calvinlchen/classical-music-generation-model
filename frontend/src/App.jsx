@@ -32,6 +32,18 @@ const PROMPTS = [
   },
 ];
 
+const COMPOSER_OPTIONS = [
+  { value: "mozart", label: "Mozart" },
+  { value: "haydn", label: "Haydn" },
+  { value: "beethoven", label: "Beethoven" },
+];
+
+const KEY_OPTIONS = [
+  "C", "Cm", "Db", "C#m", "D", "Dm", "Eb", "Ebm", "E", "Em", 
+  "F", "Fm", "Gb", "F#m", "G", "Gm", "Ab", "G#m", "A", "Am", 
+  "Bb", "Bbm", "B", "Bm"
+];
+
 // ----------------- shared helpers -----------------
 
 function base64ToUint8Array(b64) {
@@ -198,6 +210,13 @@ function DiffusionPage() {
   const [imageUrl, setImageUrl] = useState(null);
   const [midiObj, setMidiObj] = useState(null);
 
+  // --- New State for Conditional Inputs ---
+  const [mode, setMode] = useState("unconditional"); // "unconditional" | "conditional"
+  const [composer, setComposer] = useState("mozart");
+  const [selectedKey, setSelectedKey] = useState("C");
+  const [bpm, setBpm] = useState(120);
+  const [guidance, setGuidance] = useState(7.0);
+
   const { isPlaying, progress, duration, play, stop, seek } = useMidiPlayer(midiObj);
 
   // cleanup download URL & audio when unmount
@@ -211,11 +230,31 @@ function DiffusionPage() {
   const handleGenerate = async () => {
     try {
       setIsLoading(true);
-      setStatus("Requesting diffusion sample from backend…");
+      
+      let endpoint = "/generate-midi-from-diffusion";
+      let body = null;
+      let headers = {};
 
-      const res = await fetch(`${BACKEND_URL}/generate-midi-from-diffusion`, {
+      if (mode === "conditional") {
+        setStatus(`Requesting ${composer} in ${selectedKey} at ${bpm} BPM...`);
+        endpoint = "/generate-midi-from-diffusion-conditional";
+        headers = { "Content-Type": "application/json" };
+        body = JSON.stringify({
+          composer: composer,
+          key: selectedKey,
+          bpm: Number(bpm),
+          guidance: Number(guidance)
+        });
+      } else {
+        setStatus("Requesting unconditional random sample...");
+      }
+
+      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: "POST",
+        headers: headers,
+        body: body
       });
+
       if (!res.ok) throw new Error(`Backend error: ${res.status}`);
 
       const data = await res.json();
@@ -234,15 +273,25 @@ function DiffusionPage() {
       // Image
       setImageUrl(`data:image/png;base64,${data.image_base64}`);
 
-      setStatus("Generated via diffusion. Ready to play.");
-      // optional: auto-play and keep hook in sync
-      // await play(midi);
+      setStatus("Generation successful. Ready to play.");
+      
     } catch (err) {
       console.error(err);
       setStatus(`Error: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const labelStyle = { fontSize: "0.85rem", color: "#cbd5e1", display: "block", marginBottom: "0.3rem" };
+  const inputStyle = {
+    width: "100%",
+    padding: "0.4rem",
+    borderRadius: "0.3rem",
+    background: "#1e293b",
+    color: "#e5e7eb",
+    border: "1px solid #475569",
+    marginBottom: "0.8rem"
   };
 
   return (
@@ -254,13 +303,111 @@ function DiffusionPage() {
           marginBottom: "0.5rem",
         }}
       >
-        Diffusion piano-roll generator
+        Diffusion-Based MIDI Generator
       </h1>
       <p style={{ marginBottom: "1.5rem", color: "#9ca3af" }}>
-        Sample a piano-roll image from the diffusion model, convert it to MIDI,
-        and listen.
+        Generate piano rolls using one of two diffusion models, trained in-house.<br></br><br></br>
+        Choose "Unconditional" to generate a random new piano-roll image, which will
+        be converted into MIDI audio.<br></br><br></br>
+        Choose "Conditional" to generate from a model which was trained using
+        classifer-free guidance. In this mode, you can control basic style parameters.
       </p>
 
+      {/* --- Mode Toggle --- */}
+      <div style={{ 
+        display: "flex", 
+        gap: "1rem", 
+        marginBottom: "1.5rem", 
+        background: "rgba(30, 41, 59, 0.5)", 
+        padding: "0.5rem", 
+        borderRadius: "0.5rem",
+        width: "fit-content"
+      }}>
+        <label style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem", color: "#e5e7eb" }}>
+          <input 
+            type="radio" 
+            name="diffMode" 
+            value="unconditional" 
+            checked={mode === "unconditional"} 
+            onChange={() => setMode("unconditional")}
+          />
+          Unconditional (Random)
+        </label>
+        <label style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem", color: "#e5e7eb" }}>
+          <input 
+            type="radio" 
+            name="diffMode" 
+            value="conditional" 
+            checked={mode === "conditional"} 
+            onChange={() => setMode("conditional")}
+          />
+          Conditional (Style)
+        </label>
+      </div>
+
+      {/* --- Conditional Controls Area --- */}
+      {mode === "conditional" && (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "1rem",
+          background: "rgba(99, 102, 241, 0.1)",
+          border: "1px solid rgba(99, 102, 241, 0.3)",
+          borderRadius: "0.75rem",
+          padding: "1rem",
+          marginBottom: "1.5rem"
+        }}>
+          <div>
+            <label style={labelStyle}>Composer</label>
+            <select style={inputStyle} value={composer} onChange={(e) => setComposer(e.target.value)}>
+              {COMPOSER_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Key</label>
+            <select style={inputStyle} value={selectedKey} onChange={(e) => setSelectedKey(e.target.value)}>
+              {KEY_OPTIONS.map(k => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>BPM</label>
+            <input 
+              type="number" 
+              min="40" 
+              max="240" 
+              style={inputStyle} 
+              value={bpm} 
+              onChange={(e) => setBpm(e.target.value)} 
+            />
+          </div>
+
+          <div>
+            <label style={labelStyle}>
+              Guidance Scale ({guidance})
+              <span style={{ fontSize: "0.7em", color: "#94a3b8", marginLeft: "5px" }}>
+                Higher = stricter adherence to given parameters
+              </span>
+            </label>
+            <input 
+              type="range" 
+              min="1" 
+              max="10" 
+              step="0.5" 
+              style={{ width: "100%", cursor: "pointer" }} 
+              value={guidance} 
+              onChange={(e) => setGuidance(e.target.value)} 
+            />
+          </div>
+        </div>
+      )}
+
+      {/* --- Generate Button --- */}
       <button
         onClick={handleGenerate}
         disabled={isLoading}
@@ -284,7 +431,7 @@ function DiffusionPage() {
           transition: "transform 0.08s ease, box-shadow 0.08s ease",
         }}
       >
-        {isLoading ? "Generating…" : "Generate (diffusion)"}
+        {isLoading ? "Generating..." : `Generate (${mode})`}
       </button>
 
       <div style={{ marginTop: "1rem", minHeight: "1.5rem" }}>
@@ -293,6 +440,7 @@ function DiffusionPage() {
         )}
       </div>
 
+      {/* --- Playback & Download Section (Identical to previous) --- */}
       {midiObj && (
         <div
           style={{
@@ -320,7 +468,6 @@ function DiffusionPage() {
             </div>
           </div>
 
-          {/* progress bar – follows playback */}
           <input
             type="range"
             min={0}
@@ -528,7 +675,7 @@ function TransformerPage() {
   return (
     <>
       <h1 style={{ fontSize: "1.75rem", fontWeight: 700, marginBottom: "0.5rem" }}>
-        Transformer MIDI Generator
+        Transformer-Based MIDI Generator
       </h1>
       <p style={{ marginBottom: "1.5rem", color: "#9ca3af" }}>
         Generate MIDI tokens with the text transformer. Use the AI assistant, or pick a starting template below.
