@@ -26,7 +26,7 @@ Then open http://localhost:5173 in your browser.
 See `SETUP.md` for full installation details, CUDA notes, and troubleshooting.
 
 ## Video Links
-- Demo Video:
+- Demo Video: https://youtu.be/xT_28FBgdWQ
 - Technical Walkthrough Video: https://youtu.be/T3jJrlgVNk8
 
 ## Evaluation
