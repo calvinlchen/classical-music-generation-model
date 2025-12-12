@@ -8,6 +8,11 @@ Two complementary generators power the app: a transformer that produces musical 
 
 Within each model type exist two implementations: for transformers, an in-house model and a tuned version of OpenAI GPT-2; for diffusion, an unconditional model and a conditional model trained with classifier-free guidance. Each of these have their strengths and weaknesses, allowing the user to choose a model which best suits their music generation goals. For instance, GPT-2 achieves the best musical results of all the models but is limited in its context window to 1,024 tokens, while our custom in-house model can produce an endless context window but yields more inconsistent results.
 
+Ultimately, though, all models were trained on the same dataset and with the same end-goal:
+- MIDI dataset → preprocessing → (A) token stream → transformer
+- MIDI dataset → preprocessing → (B) piano-roll images → diffusion
+- Both → MIDI reconstruction → playback + download + evaluation
+
 ## Quick Start
 1) Backend (Python 3.11+, virtual environment activated):
 ```
