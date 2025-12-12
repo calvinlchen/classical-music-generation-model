@@ -1,12 +1,12 @@
 # Classical Music Generation Model
 
 ## Project Purpose and Motivation
-This project explores whether accessible machine learning methods can generate coherent classical-style music. We focus on classical-era composers (roughly 1725–1800 A.D.), training on Haydn, Mozart, and Beethoven to keep a consistent tonal style. The browser app lets musicians, students, and hobbyists experiment with these models to generate MIDIs without deep technical or music-theory expertise.
+This project explores whether accessible machine learning methods can generate coherent classical-style music. We focus on classical-era composers (roughly 1725–1800 A.D.), training on Haydn, Mozart, and Beethoven to keep a consistent tonal style. The browser app lets musicians, students, and hobbyists experiment with these models to generate MIDIs without deep technical or music-theory expertise. By showcasing a variety of machine learning models for music generation, we conduct an exploratory approach to small-scale AI music generation and highlight the differences in each model's musical capabilities.
 
 ## What It Does
 Two complementary generators power the app: a transformer that produces musical token sequences, and a diffusion model that synthesizes piano-roll images. Both outputs are converted to MIDI for playback. Users can generate pieces, preview them in-browser, view the piano-roll image, download the MIDI, and optionally draft prompts with an OpenAI-assisted helper.
 
-Within each model type exist two implementations: for transformers, an in-house model and a tuned version of OpenAI GPT-2; for diffusion, an unconditional model and a conditional model trained with classifier-free guidance. Each of these have their strengths and weaknesses, allowing the user to choose a model which best suits their music generation goals. For instance, GPT-2 achieves the best musical results of all the models but is limited in its context window to 1,024 tokens, while our custom in-house model can produce an endless context window but yields more inconsistent results. In this, our project provides a wide range of implementations as an exploratory approach to small-scale AI music generation.
+Within each model type exist two implementations: for transformers, an in-house model and a tuned version of OpenAI GPT-2; for diffusion, an unconditional model and a conditional model trained with classifier-free guidance. Each of these have their strengths and weaknesses, allowing the user to choose a model which best suits their music generation goals. For instance, GPT-2 achieves the best musical results of all the models but is limited in its context window to 1,024 tokens, while our custom in-house model can produce an endless context window but yields more inconsistent results.
 
 ## Quick Start
 1) Backend (Python 3.11+, virtual environment activated):
