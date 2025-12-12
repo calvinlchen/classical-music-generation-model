@@ -46,6 +46,11 @@ pip uninstall -y torch torchvision torchaudio
 pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --extra-index-url https://download.pytorch.org/whl/cu121
 ```
 
+For Window users, install pywinpty:
+```
+pip install pywinpty=3.0.2
+```
+
 ## 4) Git LFS setup
 Ensure Git LFS is installed on your machine.
 After installation, if this is your first time installing/running Git LFS, please run:
