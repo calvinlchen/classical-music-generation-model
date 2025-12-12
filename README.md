@@ -27,7 +27,7 @@ See `SETUP.md` for full installation details, CUDA notes, and troubleshooting.
 
 ## Video Links
 - Demo Video:
-- Technical Walkthrough Video:
+- Technical Walkthrough Video: https://youtu.be/T3jJrlgVNk8
 
 ## Evaluation
 
