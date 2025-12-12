@@ -1,7 +1,7 @@
 # Classical Music Generation Model
 
 ## Project Purpose and Motivation
-This project explores whether accessible machine learning methods can generate coherent classical-style music. We focus on classical-era composers (roughly 1725–1800 A.D.), training on Haydn, Mozart, and Beethoven to keep a consistent tonal style. The browser app lets musicians, students, and hobbyists experiment with these models to generate MIDIs without deep technical or music-theory expertise. By showcasing a variety of machine learning models for music generation, we conduct an exploratory approach to small-scale AI music generation and highlight the differences in each model's musical capabilities.
+This project explores whether accessible machine learning methods can generate coherent classical-style music. We focus on classical-era composers (roughly 1725–1800 A.D.), training on Haydn, Mozart, and Beethoven to keep a consistent tonal style. The browser app lets musicians, students, and hobbyists experiment with these models to generate MIDIs without deep technical or music-theory expertise. By showcasing a variety of machine learning models for music generation, we conduct an exploratory approach to small-scale AI music generation and highlight the differences in each model's musical capabilities for achieving the unified goal.
 
 ## What It Does
 Two complementary generators power the app: a transformer that produces musical token sequences, and a diffusion model that synthesizes piano-roll images. Both outputs are converted to MIDI for playback. Users can generate pieces, preview them in-browser, view the piano-roll image, download the MIDI, and optionally draft prompts with an OpenAI-assisted helper.
