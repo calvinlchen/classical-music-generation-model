@@ -1099,8 +1099,7 @@ function AboutPage() {
         <p style={bodyStyle}>
           This web app serves as an experiment to make classical-style music generation using accessible machine
           learning methods. Specifically, we train on a dataset of only classical-era (roughly 1725-1800 A.D.) composers --
-          Haydn, Mozart, and Beethoven -- in an attempt to create models with a roughly consistent tonal style. While this
-          is thus limited also by 
+          Haydn, Mozart, and Beethoven -- in an attempt to create models with a roughly consistent tonal style.
         </p>
       </div>
 
