@@ -116,6 +116,9 @@ The 200-epoch model is saved as "best_model.pt" in models\diffusion_unconditiona
 - Helped build and deployed the React web application, and helped build and test features such as the audio playback, MIDI downloading, and the OpenAI integration feature.
 
 ### Johan Nino Espino
-- Tested the entire project acorss different environments such as MacOS to ensure full compatibility for users.
-- Helped developed all deliverables which includes the README.md file, the SETUP.md file, the documentation, and the evaluation summaries.
-- Contributed by debugging the model training notebooks and confirmed that the diffusion and transformer ppelines works well from start to finish.
+- Led cross-platform testing and debugging of the full project across different environments, including macOS, to ensure stability and compatibility.
+- Tested and debugged the complete web application stack, including the React frontend and FastAPI backend, resolving issues in model inference, API routing, and file handling.
+- Verified and debugged the OpenAI API integration in the web app, ensuring that user text prompts correctly influence transformer-based music generation.
+- Tested and debugged the GPT-2 transformer model within the web application to confirm proper loading, inference behavior, and output quality.
+- Contributed extensively to project documentation and deliverables, including the README.md, SETUP.md, technical walkthrough materials, and evaluation summaries.
+- Validated that both the transformer and diffusion pipelines run correctly end to end, from data preprocessing and model execution to MIDI generation and playback.
